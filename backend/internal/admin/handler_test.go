@@ -17,8 +17,8 @@ type MockService struct {
 	mock.Mock
 }
 
-func (m *MockService) GetPendingComments(ctx context.Context) ([]CommentResponse, error) {
-	args := m.Called(ctx)
+func (m *MockService) GetComments(ctx context.Context, status string) ([]CommentResponse, error) {
+	args := m.Called(ctx, status)
 	return args.Get(0).([]CommentResponse), args.Error(1)
 }
 
@@ -36,7 +36,7 @@ func TestGetPendingComments(t *testing.T) {
 	mockSvc := new(MockService)
 	handler := NewHandler(mockSvc)
 
-	mockSvc.On("GetPendingComments", mock.Anything).Return([]CommentResponse{
+	mockSvc.On("GetComments", mock.Anything, "pending").Return([]CommentResponse{
 		{
 			ID:      "123",
 			Slug:    "test",
@@ -48,7 +48,7 @@ func TestGetPendingComments(t *testing.T) {
 	req := httptest.NewRequest("GET", "/api/v1/admin/comments", nil)
 	w := httptest.NewRecorder()
 
-	handler.GetPendingComments(w, req)
+	handler.GetComments(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
 
