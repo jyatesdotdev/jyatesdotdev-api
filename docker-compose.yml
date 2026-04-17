@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  localstack:
+    image: localstack/localstack:3.0.2
+    container_name: localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=lambda,apigateway,dynamodb,ses,ssm
+      - AWS_DEFAULT_REGION=us-east-1
+      - EDGE_PORT=4566
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - ACTIVATE_PRO=0
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - "./localstack-init:/etc/localstack/init/ready.d"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend
+    ports:
+      - "8080:8080"
+    environment:
+      - DYNAMODB_ENDPOINT=http://localstack:4566
+      - DYNAMODB_TABLE_NAME=jyatesdotdev-state
+      - AWS_REGION=us-east-1
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - SKIP_RECAPTCHA=true
+      - SES_FROM_EMAIL=test@jyates.dev
+      - SES_ADMIN_EMAIL=admin@jyates.dev
+    depends_on:
+      localstack:
+        condition: service_healthy

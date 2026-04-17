@@ -1,0 +1,5 @@
+.DS_Store
+.api_id
+.idea/
+.venv/
+*.zip

@@ -1,0 +1,72 @@
+name: API Deployment
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: backend/go.sum
+
+      - name: Build Lambdas
+        working-directory: backend
+        run: |
+          mkdir -p bin/admin bin/authorizer bin/contact bin/interactions
+          GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/admin/bootstrap cmd/admin/main.go
+          GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/authorizer/bootstrap cmd/authorizer/main.go
+          GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/contact/bootstrap cmd/contact/main.go
+          GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/interactions/bootstrap cmd/interactions/main.go
+
+      - name: Package Lambdas
+        working-directory: backend
+        run: |
+          zip -j admin.zip bin/admin/bootstrap
+          zip -j authorizer.zip bin/authorizer/bootstrap
+          zip -j contact.zip bin/contact/bootstrap
+          zip -j interactions.zip bin/interactions/bootstrap
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+
+      - name: Upload to S3
+        run: |
+          S3_KEY_PREFIX="lambdas/${{ github.sha }}"
+          aws s3 cp backend/admin.zip s3://${{ secrets.ARTIFACT_BUCKET }}/${S3_KEY_PREFIX}/admin.zip
+          aws s3 cp backend/authorizer.zip s3://${{ secrets.ARTIFACT_BUCKET }}/${S3_KEY_PREFIX}/authorizer.zip
+          aws s3 cp backend/contact.zip s3://${{ secrets.ARTIFACT_BUCKET }}/${S3_KEY_PREFIX}/contact.zip
+          aws s3 cp backend/interactions.zip s3://${{ secrets.ARTIFACT_BUCKET }}/${S3_KEY_PREFIX}/interactions.zip
+          
+          echo "admin_key=${S3_KEY_PREFIX}/admin.zip" >> $GITHUB_ENV
+          echo "authorizer_key=${S3_KEY_PREFIX}/authorizer.zip" >> $GITHUB_ENV
+          echo "contact_key=${S3_KEY_PREFIX}/contact.zip" >> $GITHUB_ENV
+          echo "interactions_key=${S3_KEY_PREFIX}/interactions.zip" >> $GITHUB_ENV
+
+      - name: Trigger Infra Deployment
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.INFRA_REPO_PAT }}
+          repository: ${{ github.repository_owner }}/jyatesdotdev-infra
+          event-type: deploy_api
+          client-payload: |
+            {
+              "artifact_bucket": "${{ secrets.ARTIFACT_BUCKET }}",
+              "admin_lambda_key": "${{ env.admin_key }}",
+              "authorizer_lambda_key": "${{ env.authorizer_key }}",
+              "contact_lambda_key": "${{ env.contact_key }}",
+              "interactions_lambda_key": "${{ env.interactions_key }}"
+            }
