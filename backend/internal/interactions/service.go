@@ -162,7 +162,7 @@ func (s *service) CreateComment(ctx context.Context, req CreateCommentRequest, i
 }
 
 func (s *service) ToggleCommentLike(ctx context.Context, slug, commentID, ipAddress, token string) error {
-	valid, err := recaptcha.Verify(token, "like_comment")
+	valid, err := recaptcha.Verify(token, "comment_like")
 	if err != nil {
 		return ErrRecaptchaFailed
 	}
