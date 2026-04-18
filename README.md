@@ -1,50 +1,71 @@
 # jyatesdotdev-api
 
-This repository contains the backend services for `jyates.dev`. It is built using **Go**, engineered to run as AWS Lambda functions behind an API Gateway, and leverages DynamoDB for serverless, on-demand performance.
+Go backend for [jyates.dev](https://jyates.dev) — four Lambda functions behind API Gateway.
 
 ## Architecture
 
-* **Language**: Go 1.22
-* **Computing**: AWS Lambda (ARM64)
-* **Database**: Amazon DynamoDB
-* **Orchestration**: AWS API Gateway + AWS SES
-* **Structure**: Clean Architecture (Handlers -> Services -> Repositories)
+- **Language**: Go 1.22
+- **Runtime**: AWS Lambda (ARM64, `provided.al2023`)
+- **Database**: DynamoDB (KMS-encrypted, on-demand)
+- **Email**: SES v2 (sends from `blog@jyates.dev`)
+- **Router**: chi (via `aws-lambda-go-api-proxy`)
+- **Structure**: Handlers → Services → Repositories
 
-The backend consists of highly isolated serverless functions:
-- `interactions`: Handles public interaction endpoints (fetching/submitting comments and likes).
-- `contact`: Private endpoint for user emails via AWS SES.
-- `admin`: Requires Bearer Auth; used for managing comments and dashboard state.
-- `authorizer`: A custom API Gateway Authorizer function that validates admin credentials.
+### Functions
 
-## Local Development
+| Function | Purpose | reCAPTCHA Action |
+|---|---|---|
+| `interactions` | Likes and comments (GET/POST) | `like`, `comment`, `comment_like` |
+| `contact` | Contact form → SES email | `contact_form` |
+| `admin` | Comment moderation (approve/reject/delete) | — |
+| `authorizer` | Basic Auth for admin endpoints | — |
 
-You generally don't run the API by itself. It is designed to run in a mocked AWS ecosystem (LocalStack) alongside the frontend. 
+### API Routes (via CloudFront `/api/*`)
 
-1. Navigate to the Integration repository: `cd ../jyatesdotdev-integration`
-2. Run the boot script: `./start-dev.sh`
+```
+GET  /api/v1/likes?slug=...
+POST /api/v1/likes                    {slug, token}
+GET  /api/v1/comments?slug=...
+POST /api/v1/comments                 {slug, content, authorName, authorEmail, token}
+POST /api/v1/comments/:id/like        {slug, token}
+POST /api/v1/contact                  {name, email, message, recaptchaToken}
+GET  /api/v1/admin/comments?status=...
+PUT  /api/v1/admin/comments/:id       {slug, status}
+DELETE /api/v1/admin/comments/:id     {slug}
+```
 
-This script will compile the Go binaries, start LocalStack, deploy the Lambdas, create DynamoDB tables, map mock routes in API Gateway, and boot the frontend.
+### IP Handling
+
+The `X-Forwarded-For` header passes through CloudFront → API Gateway with multiple IPs appended. The handler extracts only the first (client) IP for like deduplication.
 
 ## Testing
 
-To run the unit tests natively:
 ```bash
 cd backend
 go test -short ./...
 ```
 
-To run full End-to-End integration tests (hitting the database via API Gateway), use the playwright suite in the `jyatesdotdev-integration` repository.
+## Deployment
 
-## Deployment pipeline
+Pushes to `main` (under `backend/**`) or manual `workflow_dispatch` trigger the pipeline:
 
-Deployments are handled by GitHub Actions.
-1. When code is pushed to `main`, Go code formatting and tests are enforced via the `Security Scans` workflow.
-2. On pass, the `Frontend Deployment` step compiles the Go binaries, zips them, and ships them to a deployment bucket in AWS S3.
-3. Finally, it uses `repository_dispatch` to fire a webhook to the `jyatesdotdev-infra` repository. The infra repository then runs Terraform to point the live Lambda functions at these newly uploaded zip files.
+1. Build four Lambda binaries (cross-compiled for `linux/arm64`)
+2. Zip and upload to the artifacts S3 bucket under `lambdas/<git-sha>/`
+3. Dispatch to `jyatesdotdev-infra` with the artifact locations
 
-### Required Secrets
-To enable the deployment pipeline, provide the following GitHub Action secrets:
-* `AWS_ACCESS_KEY_ID`
-* `AWS_SECRET_ACCESS_KEY`
-* `ARTIFACT_BUCKET` (The name of the S3 bucket where Lambda zip files are stored)
-* `INFRA_REPO_PAT` (A GitHub Personal Access Token to trigger `jyatesdotdev-infra`)
+### Manual Trigger
+
+```bash
+gh workflow run deploy.yml --repo jyatesdotdev/jyatesdotdev-api --ref main
+```
+
+This builds, uploads, and dispatches to infra automatically.
+
+### Required Secrets & Variables
+
+| Type | Name | Description |
+|---|---|---|
+| Secret | `AWS_ROLE_ARN` | GitHub OIDC deploy role ARN |
+| Secret | `INFRA_REPO_PAT` | PAT to trigger `jyatesdotdev-infra` dispatch |
+| Variable | `ARTIFACTS_BUCKET` | S3 bucket for Lambda zips |
+| Variable | `AWS_REGION` | `us-west-2` |
