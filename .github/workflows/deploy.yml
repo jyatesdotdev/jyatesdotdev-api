@@ -48,10 +48,10 @@ jobs:
       - name: Upload to S3
         run: |
           S3_KEY_PREFIX="lambdas/${{ github.sha }}"
-          aws s3 cp backend/admin.zip s3://${{ secrets.ARTIFACT_BUCKET }}/${S3_KEY_PREFIX}/admin.zip
-          aws s3 cp backend/authorizer.zip s3://${{ secrets.ARTIFACT_BUCKET }}/${S3_KEY_PREFIX}/authorizer.zip
-          aws s3 cp backend/contact.zip s3://${{ secrets.ARTIFACT_BUCKET }}/${S3_KEY_PREFIX}/contact.zip
-          aws s3 cp backend/interactions.zip s3://${{ secrets.ARTIFACT_BUCKET }}/${S3_KEY_PREFIX}/interactions.zip
+          aws s3 cp backend/admin.zip s3://${{ vars.ARTIFACTS_BUCKET }}/${S3_KEY_PREFIX}/admin.zip
+          aws s3 cp backend/authorizer.zip s3://${{ vars.ARTIFACTS_BUCKET }}/${S3_KEY_PREFIX}/authorizer.zip
+          aws s3 cp backend/contact.zip s3://${{ vars.ARTIFACTS_BUCKET }}/${S3_KEY_PREFIX}/contact.zip
+          aws s3 cp backend/interactions.zip s3://${{ vars.ARTIFACTS_BUCKET }}/${S3_KEY_PREFIX}/interactions.zip
           
           echo "admin_key=${S3_KEY_PREFIX}/admin.zip" >> $GITHUB_ENV
           echo "authorizer_key=${S3_KEY_PREFIX}/authorizer.zip" >> $GITHUB_ENV
@@ -66,7 +66,7 @@ jobs:
           event-type: deploy_api
           client-payload: |
             {
-              "artifact_bucket": "${{ secrets.ARTIFACT_BUCKET }}",
+              "artifact_bucket": "${{ vars.ARTIFACTS_BUCKET }}",
               "admin_lambda_key": "${{ env.admin_key }}",
               "authorizer_lambda_key": "${{ env.authorizer_key }}",
               "contact_lambda_key": "${{ env.contact_key }}",
