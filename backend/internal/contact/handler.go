@@ -2,6 +2,7 @@ package contact
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 
@@ -58,6 +59,7 @@ func (h *Handler) SubmitContact(w http.ResponseWriter, r *http.Request) {
 	if h.EmailService != nil {
 		err := h.EmailService.SendContactEmail(r.Context(), req.Name, req.Email, req.Message)
 		if err != nil {
+			log.Printf("SES send error: %v", err)
 			http.Error(w, "failed to send email", http.StatusInternalServerError)
 			return
 		}
