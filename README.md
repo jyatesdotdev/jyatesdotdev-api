@@ -38,6 +38,20 @@ DELETE /api/v1/admin/comments/:id     {slug}
 
 The `X-Forwarded-For` header passes through CloudFront → API Gateway with multiple IPs appended. The handler extracts only the first (client) IP for like deduplication.
 
+### DynamoDB Schema
+
+Single table `jyatesdotdev-state` with single-table design:
+
+| PK | SK | Purpose |
+|---|---|---|
+| `POST#<slug>` | `METADATA` | Post metadata (likeCount) |
+| `POST#<slug>` | `LIKE#<ip>` | Like record (existence = liked) |
+| `POST#<slug>` | `COMMENT#<uuid>` | Comment (content, author, status, likeCount) |
+| `COMMENT#<uuid>` | `LIKE#<ip>` | Comment like tracking |
+| `POST#<slug>#USER#<ip>` | `LIKE#COMMENT#<uuid>` | User-comment like cross-reference |
+
+GSI1 (`GSI1PK`/`GSI1SK`) indexes comments by status for admin queries (e.g., `STATUS#approved`, `STATUS#pending`).
+
 ## Testing
 
 ```bash
