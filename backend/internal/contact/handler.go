@@ -15,7 +15,7 @@ type Request struct {
 	Name    string `json:"name"`
 	Email   string `json:"email"`
 	Message string `json:"message"`
-	Token   string `json:"token"`
+	Token   string `json:"recaptchaToken"`
 }
 
 type Handler struct {
@@ -45,7 +45,7 @@ func (h *Handler) SubmitContact(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify ReCAPTCHA
-	valid, err := recaptcha.Verify(req.Token, "contact")
+	valid, err := recaptcha.Verify(req.Token, "contact_form")
 	if err != nil {
 		http.Error(w, "recaptcha verification failed", http.StatusInternalServerError)
 		return
