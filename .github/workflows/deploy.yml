@@ -75,3 +75,10 @@ jobs:
               "contact_lambda_key": "${{ env.contact_key }}",
               "interactions_lambda_key": "${{ env.interactions_key }}"
             }
+
+      - name: Trigger E2E Tests
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.INFRA_REPO_PAT }}
+          repository: ${{ github.repository_owner }}/jyatesdotdev-integration
+          event-type: run_e2e
