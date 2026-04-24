@@ -10,13 +10,11 @@ import (
 	"github.com/microcosm-cc/bluemonday"
 
 	"github.com/jyates/jyatesdotdev-api/backend/internal/email"
-	"github.com/jyates/jyatesdotdev-api/backend/internal/recaptcha"
 )
 
 var (
-	ErrInvalidRecaptcha = errors.New("invalid recaptcha token")
-	ErrRecaptchaFailed  = errors.New("recaptcha verification failed")
-	ErrInvalidInput     = errors.New("invalid input after sanitization")
+	ErrInvalidInput = errors.New("invalid input after sanitization")
+	ErrHoneypot     = errors.New("honeypot field was filled")
 )
 
 type Service interface {
@@ -99,12 +97,9 @@ func (s *service) GetComments(ctx context.Context, slug, visitorID string) ([]Co
 }
 
 func (s *service) CreateComment(ctx context.Context, req CreateCommentRequest, ipAddress string) (string, error) {
-	valid, err := recaptcha.Verify(req.Token, "comment")
-	if err != nil {
-		return "", ErrRecaptchaFailed
-	}
-	if !valid {
-		return "", ErrInvalidRecaptcha
+	// Honeypot: reject if the hidden field was filled (bot behavior)
+	if req.Website != "" {
+		return "", ErrHoneypot
 	}
 
 	p := bluemonday.StrictPolicy()

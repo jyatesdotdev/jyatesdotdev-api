@@ -84,13 +84,13 @@ func TestCreateComment_MissingFields(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-func TestCreateComment_RecaptchaFailure(t *testing.T) {
+func TestCreateComment_HoneypotTriggered(t *testing.T) {
 	mockSvc := new(MockService)
 	handler := NewHandler(mockSvc)
 
-	mockSvc.On("CreateComment", mock.Anything, mock.Anything, "192.0.2.1").Return("", ErrRecaptchaFailed)
+	mockSvc.On("CreateComment", mock.Anything, mock.Anything, "192.0.2.1").Return("", ErrHoneypot)
 
-	reqBody := `{"slug": "test", "content": "hello", "authorName": "John"}`
+	reqBody := `{"slug": "test", "content": "hello", "authorName": "John", "website": "http://spam.com"}`
 	req := httptest.NewRequest("POST", "/api/v1/comments", strings.NewReader(reqBody))
 	req.RemoteAddr = "192.0.2.1"
 	w := httptest.NewRecorder()

@@ -2,9 +2,9 @@ package contact
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
@@ -48,16 +48,19 @@ func TestSubmitContact_MissingFields(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-func TestSubmitContact_RecaptchaFailure(t *testing.T) {
+func TestSubmitContact_HoneypotTriggered(t *testing.T) {
 	handler := NewHandler(nil)
-	reqBody := `{"name": "John", "email": "john@example.com", "message": "Hello"}`
+	reqBody := `{"name": "Bot", "email": "bot@spam.com", "message": "Buy stuff", "website": "http://spam.com"}`
 	req := httptest.NewRequest("POST", "/api/v1/contact", strings.NewReader(reqBody))
 	w := httptest.NewRecorder()
 
-	// Recaptcha will fail if SKIP_RECAPTCHA is not set and secret key is empty
 	handler.SubmitContact(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	// Returns 200 to not tip off the bot, but no email is sent
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp map[string]string
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "message sent successfully", resp["message"])
 }
 
 func TestSubmitContact_Success(t *testing.T) {
@@ -65,12 +68,9 @@ func TestSubmitContact_Success(t *testing.T) {
 	mockEmail.On("SendContactEmail", mock.Anything, "John", "john@example.com", "Hello").Return(nil)
 
 	handler := NewHandler(mockEmail)
-	reqBody := `{"name": "John", "email": "john@example.com", "message": "Hello", "token": "dummy"}`
+	reqBody := `{"name": "John", "email": "john@example.com", "message": "Hello"}`
 	req := httptest.NewRequest("POST", "/api/v1/contact", strings.NewReader(reqBody))
 	w := httptest.NewRecorder()
-
-	os.Setenv("SKIP_RECAPTCHA", "true")
-	defer os.Unsetenv("SKIP_RECAPTCHA")
 
 	handler.SubmitContact(w, req)
 

@@ -38,7 +38,7 @@ type CreateCommentRequest struct {
 	Content     string `json:"content"`
 	AuthorName  string `json:"authorName"`
 	AuthorEmail string `json:"authorEmail"`
-	Token       string `json:"token"`
+	Website     string `json:"website"` // honeypot field
 }
 
 func (h *Handler) GetComments(w http.ResponseWriter, r *http.Request) {
@@ -81,14 +81,6 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 
 	commentID, err := h.Service.CreateComment(r.Context(), req, ipAddress)
 	if err != nil {
-		if errors.Is(err, ErrInvalidRecaptcha) {
-			http.Error(w, "invalid recaptcha token", http.StatusForbidden)
-			return
-		}
-		if errors.Is(err, ErrRecaptchaFailed) {
-			http.Error(w, "recaptcha verification failed", http.StatusInternalServerError)
-			return
-		}
 		if errors.Is(err, ErrInvalidInput) {
 			http.Error(w, "content or authorName is invalid after sanitization", http.StatusBadRequest)
 			return

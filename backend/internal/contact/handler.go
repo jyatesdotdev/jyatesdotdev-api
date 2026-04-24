@@ -9,14 +9,13 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/jyates/jyatesdotdev-api/backend/internal/email"
-	"github.com/jyates/jyatesdotdev-api/backend/internal/recaptcha"
 )
 
 type Request struct {
 	Name    string `json:"name"`
 	Email   string `json:"email"`
 	Message string `json:"message"`
-	Token   string `json:"recaptchaToken"`
+	Website string `json:"website"` // honeypot field — should always be empty
 }
 
 type Handler struct {
@@ -45,14 +44,11 @@ func (h *Handler) SubmitContact(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify ReCAPTCHA
-	valid, err := recaptcha.Verify(req.Token, "contact_form")
-	if err != nil {
-		http.Error(w, "recaptcha verification failed", http.StatusInternalServerError)
-		return
-	}
-	if !valid {
-		http.Error(w, "invalid recaptcha token", http.StatusForbidden)
+	// Honeypot: reject if the hidden field was filled (bot behavior)
+	if req.Website != "" {
+		// Return 200 to not tip off the bot
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"message": "message sent successfully"})
 		return
 	}
 
