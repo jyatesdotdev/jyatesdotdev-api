@@ -16,14 +16,14 @@ import (
 
 type Repository interface {
 	GetPostMetadata(ctx context.Context, slug string) (*PostMetadata, error)
-	CheckUserLike(ctx context.Context, slug, ipAddress string) (bool, error)
-	ToggleLike(ctx context.Context, slug, ipAddress string) error
+	CheckUserLike(ctx context.Context, slug, visitorID string) (bool, error)
+	ToggleLike(ctx context.Context, slug, visitorID string) error
 
 	GetApprovedComments(ctx context.Context, slug string) ([]CommentItem, error)
-	GetUserLikedComments(ctx context.Context, slug, ipAddress string) (map[string]bool, error)
+	GetUserLikedComments(ctx context.Context, slug, visitorID string) (map[string]bool, error)
 	CreateComment(ctx context.Context, item CommentItem) error
 
-	ToggleCommentLike(ctx context.Context, slug, commentID, ipAddress string) error
+	ToggleCommentLike(ctx context.Context, slug, commentID, visitorID string) error
 }
 
 type dynamoRepository struct {
@@ -56,15 +56,15 @@ func (r *dynamoRepository) GetPostMetadata(ctx context.Context, slug string) (*P
 	return &metadata, nil
 }
 
-func (r *dynamoRepository) CheckUserLike(ctx context.Context, slug, ipAddress string) (bool, error) {
-	if ipAddress == "" {
+func (r *dynamoRepository) CheckUserLike(ctx context.Context, slug, visitorID string) (bool, error) {
+	if visitorID == "" {
 		return false, nil
 	}
 	likeOutput, err := r.db.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(r.db.TableName),
 		Key: map[string]types.AttributeValue{
 			"PK": &types.AttributeValueMemberS{Value: "POST#" + slug},
-			"SK": &types.AttributeValueMemberS{Value: "LIKE#" + ipAddress},
+			"SK": &types.AttributeValueMemberS{Value: "LIKE#" + visitorID},
 		},
 	})
 	if err != nil {
@@ -73,12 +73,12 @@ func (r *dynamoRepository) CheckUserLike(ctx context.Context, slug, ipAddress st
 	return likeOutput.Item != nil, nil
 }
 
-func (r *dynamoRepository) ToggleLike(ctx context.Context, slug, ipAddress string) error {
+func (r *dynamoRepository) ToggleLike(ctx context.Context, slug, visitorID string) error {
 	likeOutput, err := r.db.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(r.db.TableName),
 		Key: map[string]types.AttributeValue{
 			"PK": &types.AttributeValueMemberS{Value: "POST#" + slug},
-			"SK": &types.AttributeValueMemberS{Value: "LIKE#" + ipAddress},
+			"SK": &types.AttributeValueMemberS{Value: "LIKE#" + visitorID},
 		},
 	})
 	if err != nil {
@@ -94,7 +94,7 @@ func (r *dynamoRepository) ToggleLike(ctx context.Context, slug, ipAddress strin
 				TableName: aws.String(r.db.TableName),
 				Key: map[string]types.AttributeValue{
 					"PK": &types.AttributeValueMemberS{Value: "POST#" + slug},
-					"SK": &types.AttributeValueMemberS{Value: "LIKE#" + ipAddress},
+					"SK": &types.AttributeValueMemberS{Value: "LIKE#" + visitorID},
 				},
 			},
 		})
@@ -118,7 +118,7 @@ func (r *dynamoRepository) ToggleLike(ctx context.Context, slug, ipAddress strin
 	} else {
 		like := map[string]types.AttributeValue{
 			"PK":        &types.AttributeValueMemberS{Value: "POST#" + slug},
-			"SK":        &types.AttributeValueMemberS{Value: "LIKE#" + ipAddress},
+			"SK":        &types.AttributeValueMemberS{Value: "LIKE#" + visitorID},
 			"createdAt": &types.AttributeValueMemberS{Value: time.Now().Format(time.RFC3339)},
 		}
 		transItems = append(transItems, types.TransactWriteItem{
@@ -173,9 +173,9 @@ func (r *dynamoRepository) GetApprovedComments(ctx context.Context, slug string)
 	return items, nil
 }
 
-func (r *dynamoRepository) GetUserLikedComments(ctx context.Context, slug, ipAddress string) (map[string]bool, error) {
+func (r *dynamoRepository) GetUserLikedComments(ctx context.Context, slug, visitorID string) (map[string]bool, error) {
 	likedCommentIDs := make(map[string]bool)
-	if ipAddress == "" {
+	if visitorID == "" {
 		return likedCommentIDs, nil
 	}
 
@@ -183,7 +183,7 @@ func (r *dynamoRepository) GetUserLikedComments(ctx context.Context, slug, ipAdd
 		TableName:              aws.String(r.db.TableName),
 		KeyConditionExpression: aws.String("PK = :pk AND begins_with(SK, :skPrefix)"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":pk":       &types.AttributeValueMemberS{Value: "POST#" + slug + "#USER#" + ipAddress},
+			":pk":       &types.AttributeValueMemberS{Value: "POST#" + slug + "#USER#" + visitorID},
 			":skPrefix": &types.AttributeValueMemberS{Value: "LIKE#COMMENT#"},
 		},
 	})
@@ -212,12 +212,12 @@ func (r *dynamoRepository) CreateComment(ctx context.Context, item CommentItem) 
 	return err
 }
 
-func (r *dynamoRepository) ToggleCommentLike(ctx context.Context, slug, commentID, ipAddress string) error {
+func (r *dynamoRepository) ToggleCommentLike(ctx context.Context, slug, commentID, visitorID string) error {
 	likeOutput, err := r.db.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(r.db.TableName),
 		Key: map[string]types.AttributeValue{
 			"PK": &types.AttributeValueMemberS{Value: "COMMENT#" + commentID},
-			"SK": &types.AttributeValueMemberS{Value: "LIKE#" + ipAddress},
+			"SK": &types.AttributeValueMemberS{Value: "LIKE#" + visitorID},
 		},
 	})
 	if err != nil {
@@ -233,7 +233,7 @@ func (r *dynamoRepository) ToggleCommentLike(ctx context.Context, slug, commentI
 				TableName: aws.String(r.db.TableName),
 				Key: map[string]types.AttributeValue{
 					"PK": &types.AttributeValueMemberS{Value: "COMMENT#" + commentID},
-					"SK": &types.AttributeValueMemberS{Value: "LIKE#" + ipAddress},
+					"SK": &types.AttributeValueMemberS{Value: "LIKE#" + visitorID},
 				},
 			},
 		})
@@ -241,7 +241,7 @@ func (r *dynamoRepository) ToggleCommentLike(ctx context.Context, slug, commentI
 			Delete: &types.Delete{
 				TableName: aws.String(r.db.TableName),
 				Key: map[string]types.AttributeValue{
-					"PK": &types.AttributeValueMemberS{Value: "POST#" + slug + "#USER#" + ipAddress},
+					"PK": &types.AttributeValueMemberS{Value: "POST#" + slug + "#USER#" + visitorID},
 					"SK": &types.AttributeValueMemberS{Value: "LIKE#COMMENT#" + commentID},
 				},
 			},
@@ -270,7 +270,7 @@ func (r *dynamoRepository) ToggleCommentLike(ctx context.Context, slug, commentI
 				TableName: aws.String(r.db.TableName),
 				Item: map[string]types.AttributeValue{
 					"PK":        &types.AttributeValueMemberS{Value: "COMMENT#" + commentID},
-					"SK":        &types.AttributeValueMemberS{Value: "LIKE#" + ipAddress},
+					"SK":        &types.AttributeValueMemberS{Value: "LIKE#" + visitorID},
 					"createdAt": &types.AttributeValueMemberS{Value: now},
 				},
 			},
@@ -279,7 +279,7 @@ func (r *dynamoRepository) ToggleCommentLike(ctx context.Context, slug, commentI
 			Put: &types.Put{
 				TableName: aws.String(r.db.TableName),
 				Item: map[string]types.AttributeValue{
-					"PK":        &types.AttributeValueMemberS{Value: "POST#" + slug + "#USER#" + ipAddress},
+					"PK":        &types.AttributeValueMemberS{Value: "POST#" + slug + "#USER#" + visitorID},
 					"SK":        &types.AttributeValueMemberS{Value: "LIKE#COMMENT#" + commentID},
 					"createdAt": &types.AttributeValueMemberS{Value: now},
 				},

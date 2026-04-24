@@ -97,8 +97,14 @@ func setupTestDB(t *testing.T) *db.Client {
 func TestIntegration_CommentsFlow(t *testing.T) {
 	// 1. Setup DB and Handlers
 	dbClient := setupTestDB(t)
-	interactionsHandler := interactions.NewHandler(dbClient, nil)
-	adminHandler := admin.NewHandler(dbClient)
+
+	interactionsRepo := interactions.NewRepository(dbClient)
+	interactionsSvc := interactions.NewService(interactionsRepo, nil)
+	interactionsHandler := interactions.NewHandler(interactionsSvc)
+
+	adminRepo := admin.NewRepository(dbClient)
+	adminSvc := admin.NewService(adminRepo)
+	adminHandler := admin.NewHandler(adminSvc)
 
 	os.Setenv("SKIP_RECAPTCHA", "true")
 	defer os.Unsetenv("SKIP_RECAPTCHA")
@@ -109,8 +115,9 @@ func TestIntegration_CommentsFlow(t *testing.T) {
 	r.Mount("/api/v1/admin", adminHandler.Routes())
 
 	slug := "integration-test-post"
+	visitorID := "integration-test-visitor"
 
-	// 2. Submit a comment
+	// 2. Submit a comment (still uses IP for moderation)
 	reqBody := `{"slug": "` + slug + `", "content": "This is a great post!", "authorName": "Test User", "token": "dummy"}`
 	req := httptest.NewRequest("POST", "/api/v1/comments", strings.NewReader(reqBody))
 	req.Header.Set("X-Forwarded-For", "127.0.0.1")
@@ -168,10 +175,10 @@ func TestIntegration_CommentsFlow(t *testing.T) {
 	assert.Equal(t, "This is a great post!", publicResp[0].Content)
 	assert.Equal(t, 0, publicResp[0].LikeCount)
 
-	// 7. Toggle Like on comment
-	reqBody = `{"slug": "` + slug + `", "token": "dummy"}`
+	// 7. Toggle Like on comment (uses X-Visitor-Id now)
+	reqBody = `{"slug": "` + slug + `"}`
 	req = httptest.NewRequest("POST", "/api/v1/comments/"+commentID+"/like", strings.NewReader(reqBody))
-	req.Header.Set("X-Forwarded-For", "127.0.0.1")
+	req.Header.Set("X-Visitor-Id", visitorID)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
@@ -179,7 +186,7 @@ func TestIntegration_CommentsFlow(t *testing.T) {
 	// 8. Verify LikeCount increased and UserHasLiked is true
 	time.Sleep(100 * time.Millisecond) // Ensure eventual consistency if needed (usually strongly consistent on same item, but query on GSI might be eventual)
 	req = httptest.NewRequest("GET", "/api/v1/comments?slug="+slug, nil)
-	req.Header.Set("X-Forwarded-For", "127.0.0.1")
+	req.Header.Set("X-Visitor-Id", visitorID)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)

@@ -6,6 +6,10 @@ TABLE="jyatesdotdev-state"
 
 echo "🌱 Seeding LocalStack DynamoDB..."
 
+# Verify SES email identities
+aws --endpoint-url=$ENDPOINT ses verify-email-identity --email-address test@jyates.dev 2>/dev/null || true
+aws --endpoint-url=$ENDPOINT ses verify-email-identity --email-address admin@jyates.dev 2>/dev/null || true
+
 # Add a post metadata
 aws --endpoint-url=$ENDPOINT dynamodb put-item \
     --table-name $TABLE \

@@ -45,7 +45,7 @@ deploy_lambda() {
 }
 
 deploy_lambda "interactions-api" "backend/interactions.zip" "{DYNAMODB_ENDPOINT=http://localstack:4566,DYNAMODB_TABLE_NAME=jyatesdotdev-state,SKIP_RECAPTCHA=true}"
-deploy_lambda "contact-api" "backend/contact.zip" "{SES_FROM_EMAIL=test@jyates.dev,SES_ADMIN_EMAIL=admin@jyates.dev,SKIP_RECAPTCHA=true}"
+deploy_lambda "contact-api" "backend/contact.zip" "{SES_FROM_EMAIL=test@jyates.dev,SES_ADMIN_EMAIL=admin@jyates.dev,SES_ENDPOINT=http://localstack:4566,SKIP_RECAPTCHA=true}"
 deploy_lambda "admin-api" "backend/admin.zip" "{DYNAMODB_ENDPOINT=http://localstack:4566,DYNAMODB_TABLE_NAME=jyatesdotdev-state}"
 
 echo "Functions deployed successfully to LocalStack."

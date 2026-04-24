@@ -48,9 +48,9 @@ func (h *Handler) GetComments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ipAddress := h.extractIP(r)
+	visitorID := r.Header.Get("X-Visitor-Id")
 
-	responses, err := h.Service.GetComments(r.Context(), slug, ipAddress)
+	responses, err := h.Service.GetComments(r.Context(), slug, visitorID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -106,8 +106,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 }
 
 type ToggleCommentLikeRequest struct {
-	Slug  string `json:"slug"`
-	Token string `json:"token"`
+	Slug string `json:"slug"`
 }
 
 func (h *Handler) ToggleCommentLike(w http.ResponseWriter, r *http.Request) {
@@ -129,18 +128,14 @@ func (h *Handler) ToggleCommentLike(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ipAddress := h.extractIP(r)
+	visitorID := r.Header.Get("X-Visitor-Id")
+	if visitorID == "" {
+		http.Error(w, "X-Visitor-Id header is required", http.StatusBadRequest)
+		return
+	}
 
-	err := h.Service.ToggleCommentLike(r.Context(), req.Slug, commentID, ipAddress, req.Token)
+	err := h.Service.ToggleCommentLike(r.Context(), req.Slug, commentID, visitorID)
 	if err != nil {
-		if errors.Is(err, ErrInvalidRecaptcha) {
-			http.Error(w, "invalid recaptcha token", http.StatusForbidden)
-			return
-		}
-		if errors.Is(err, ErrRecaptchaFailed) {
-			http.Error(w, "recaptcha verification failed", http.StatusInternalServerError)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

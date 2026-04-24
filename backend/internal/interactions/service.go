@@ -20,12 +20,12 @@ var (
 )
 
 type Service interface {
-	GetLikes(ctx context.Context, slug, ipAddress string) (LikesResponse, error)
-	ToggleLike(ctx context.Context, slug, ipAddress, token string) (LikesResponse, error)
+	GetLikes(ctx context.Context, slug, visitorID string) (LikesResponse, error)
+	ToggleLike(ctx context.Context, slug, visitorID string) (LikesResponse, error)
 
-	GetComments(ctx context.Context, slug, ipAddress string) ([]CommentResponse, error)
+	GetComments(ctx context.Context, slug, visitorID string) ([]CommentResponse, error)
 	CreateComment(ctx context.Context, req CreateCommentRequest, ipAddress string) (string, error)
-	ToggleCommentLike(ctx context.Context, slug, commentID, ipAddress, token string) error
+	ToggleCommentLike(ctx context.Context, slug, commentID, visitorID string) error
 }
 
 type service struct {
@@ -40,13 +40,13 @@ func NewService(repo Repository, emailService email.Service) Service {
 	}
 }
 
-func (s *service) GetLikes(ctx context.Context, slug, ipAddress string) (LikesResponse, error) {
+func (s *service) GetLikes(ctx context.Context, slug, visitorID string) (LikesResponse, error) {
 	metadata, err := s.repo.GetPostMetadata(ctx, slug)
 	if err != nil {
 		return LikesResponse{}, err
 	}
 
-	userHasLiked, err := s.repo.CheckUserLike(ctx, slug, ipAddress)
+	userHasLiked, err := s.repo.CheckUserLike(ctx, slug, visitorID)
 	if err != nil {
 		return LikesResponse{}, err
 	}
@@ -58,24 +58,15 @@ func (s *service) GetLikes(ctx context.Context, slug, ipAddress string) (LikesRe
 	}, nil
 }
 
-func (s *service) ToggleLike(ctx context.Context, slug, ipAddress, token string) (LikesResponse, error) {
-	valid, err := recaptcha.Verify(token, "like")
-	if err != nil {
-		return LikesResponse{}, ErrRecaptchaFailed
-	}
-	if !valid {
-		return LikesResponse{}, ErrInvalidRecaptcha
-	}
-
-	if err := s.repo.ToggleLike(ctx, slug, ipAddress); err != nil {
+func (s *service) ToggleLike(ctx context.Context, slug, visitorID string) (LikesResponse, error) {
+	if err := s.repo.ToggleLike(ctx, slug, visitorID); err != nil {
 		return LikesResponse{}, err
 	}
 
-	// Fetch new count
-	return s.GetLikes(ctx, slug, ipAddress)
+	return s.GetLikes(ctx, slug, visitorID)
 }
 
-func (s *service) GetComments(ctx context.Context, slug, ipAddress string) ([]CommentResponse, error) {
+func (s *service) GetComments(ctx context.Context, slug, visitorID string) ([]CommentResponse, error) {
 	items, err := s.repo.GetApprovedComments(ctx, slug)
 	if err != nil {
 		return nil, err
@@ -94,7 +85,7 @@ func (s *service) GetComments(ctx context.Context, slug, ipAddress string) ([]Co
 	}
 
 	if len(responses) > 0 {
-		likedCommentIDs, err := s.repo.GetUserLikedComments(ctx, slug, ipAddress)
+		likedCommentIDs, err := s.repo.GetUserLikedComments(ctx, slug, visitorID)
 		if err == nil {
 			for i := range responses {
 				if likedCommentIDs[responses[i].ID] {
@@ -161,14 +152,6 @@ func (s *service) CreateComment(ctx context.Context, req CreateCommentRequest, i
 	return commentID, nil
 }
 
-func (s *service) ToggleCommentLike(ctx context.Context, slug, commentID, ipAddress, token string) error {
-	valid, err := recaptcha.Verify(token, "comment_like")
-	if err != nil {
-		return ErrRecaptchaFailed
-	}
-	if !valid {
-		return ErrInvalidRecaptcha
-	}
-
-	return s.repo.ToggleCommentLike(ctx, slug, commentID, ipAddress)
+func (s *service) ToggleCommentLike(ctx context.Context, slug, commentID, visitorID string) error {
+	return s.repo.ToggleCommentLike(ctx, slug, commentID, visitorID)
 }

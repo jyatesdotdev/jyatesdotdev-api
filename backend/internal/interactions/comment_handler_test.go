@@ -18,8 +18,9 @@ func TestGetComments(t *testing.T) {
 	handler := NewHandler(mockSvc)
 
 	slug := "test-post"
+	visitorID := "visitor-abc-123"
 
-	mockSvc.On("GetComments", mock.Anything, slug, "127.0.0.1").Return([]CommentResponse{
+	mockSvc.On("GetComments", mock.Anything, slug, visitorID).Return([]CommentResponse{
 		{
 			ID:           "123",
 			Content:      "Hello world",
@@ -31,7 +32,7 @@ func TestGetComments(t *testing.T) {
 	}, nil)
 
 	req := httptest.NewRequest("GET", "/api/v1/comments?slug="+slug, nil)
-	req.Header.Set("X-Forwarded-For", "127.0.0.1")
+	req.Header.Set("X-Visitor-Id", visitorID)
 	w := httptest.NewRecorder()
 
 	handler.GetComments(w, req)
@@ -101,7 +102,7 @@ func TestCreateComment_RecaptchaFailure(t *testing.T) {
 
 func TestToggleCommentLike_MissingID(t *testing.T) {
 	handler := NewHandler(nil)
-	reqBody := `{"slug": "test-post", "token": "valid_token"}`
+	reqBody := `{"slug": "test-post"}`
 	req := httptest.NewRequest("POST", "/like", strings.NewReader(reqBody))
 	w := httptest.NewRecorder()
 
@@ -126,15 +127,10 @@ func TestToggleCommentLike_InvalidJSON(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-func TestToggleCommentLike_RecaptchaFailure(t *testing.T) {
-	mockSvc := new(MockService)
-	handler := NewHandler(mockSvc)
-
-	mockSvc.On("ToggleCommentLike", mock.Anything, "test-post", "123", "192.0.2.1", "invalid_token").Return(ErrRecaptchaFailed)
-
-	reqBody := `{"slug": "test-post", "token": "invalid_token"}`
+func TestToggleCommentLike_MissingVisitorId(t *testing.T) {
+	handler := NewHandler(nil)
+	reqBody := `{"slug": "test-post"}`
 	req := httptest.NewRequest("POST", "/123/like", strings.NewReader(reqBody))
-	req.RemoteAddr = "192.0.2.1"
 
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", "123")
@@ -144,18 +140,21 @@ func TestToggleCommentLike_RecaptchaFailure(t *testing.T) {
 
 	handler.ToggleCommentLike(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "X-Visitor-Id")
 }
 
 func TestToggleCommentLike_Success(t *testing.T) {
 	mockSvc := new(MockService)
 	handler := NewHandler(mockSvc)
 
-	mockSvc.On("ToggleCommentLike", mock.Anything, "test-post", "123", "127.0.0.1", "dummy").Return(nil)
+	visitorID := "visitor-abc-123"
 
-	reqBody := `{"slug": "test-post", "token": "dummy"}`
+	mockSvc.On("ToggleCommentLike", mock.Anything, "test-post", "123", visitorID).Return(nil)
+
+	reqBody := `{"slug": "test-post"}`
 	req := httptest.NewRequest("POST", "/123/like", strings.NewReader(reqBody))
-	req.Header.Set("X-Forwarded-For", "127.0.0.1")
+	req.Header.Set("X-Visitor-Id", visitorID)
 
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", "123")

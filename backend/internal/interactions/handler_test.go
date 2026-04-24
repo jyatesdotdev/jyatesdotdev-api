@@ -16,18 +16,18 @@ type MockService struct {
 	mock.Mock
 }
 
-func (m *MockService) GetLikes(ctx context.Context, slug, ipAddress string) (LikesResponse, error) {
-	args := m.Called(ctx, slug, ipAddress)
+func (m *MockService) GetLikes(ctx context.Context, slug, visitorID string) (LikesResponse, error) {
+	args := m.Called(ctx, slug, visitorID)
 	return args.Get(0).(LikesResponse), args.Error(1)
 }
 
-func (m *MockService) ToggleLike(ctx context.Context, slug, ipAddress, token string) (LikesResponse, error) {
-	args := m.Called(ctx, slug, ipAddress, token)
+func (m *MockService) ToggleLike(ctx context.Context, slug, visitorID string) (LikesResponse, error) {
+	args := m.Called(ctx, slug, visitorID)
 	return args.Get(0).(LikesResponse), args.Error(1)
 }
 
-func (m *MockService) GetComments(ctx context.Context, slug, ipAddress string) ([]CommentResponse, error) {
-	args := m.Called(ctx, slug, ipAddress)
+func (m *MockService) GetComments(ctx context.Context, slug, visitorID string) ([]CommentResponse, error) {
+	args := m.Called(ctx, slug, visitorID)
 	return args.Get(0).([]CommentResponse), args.Error(1)
 }
 
@@ -36,8 +36,8 @@ func (m *MockService) CreateComment(ctx context.Context, req CreateCommentReques
 	return args.String(0), args.Error(1)
 }
 
-func (m *MockService) ToggleCommentLike(ctx context.Context, slug, commentID, ipAddress, token string) error {
-	args := m.Called(ctx, slug, commentID, ipAddress, token)
+func (m *MockService) ToggleCommentLike(ctx context.Context, slug, commentID, visitorID string) error {
+	args := m.Called(ctx, slug, commentID, visitorID)
 	return args.Error(0)
 }
 
@@ -46,15 +46,16 @@ func TestGetLikes(t *testing.T) {
 	handler := NewHandler(mockSvc)
 
 	slug := "test-post"
+	visitorID := "visitor-abc-123"
 
-	mockSvc.On("GetLikes", mock.Anything, slug, "192.0.2.1").Return(LikesResponse{
+	mockSvc.On("GetLikes", mock.Anything, slug, visitorID).Return(LikesResponse{
 		Slug:         slug,
 		LikeCount:    5,
 		UserHasLiked: false,
 	}, nil)
 
 	req := httptest.NewRequest("GET", "/api/v1/likes?slug="+slug, nil)
-	req.RemoteAddr = "192.0.2.1"
+	req.Header.Set("X-Visitor-Id", visitorID)
 	w := httptest.NewRecorder()
 
 	handler.GetLikes(w, req)
@@ -71,11 +72,30 @@ func TestGetLikes(t *testing.T) {
 	mockSvc.AssertExpectations(t)
 }
 
+func TestGetLikes_NoVisitorId(t *testing.T) {
+	mockSvc := new(MockService)
+	handler := NewHandler(mockSvc)
+
+	mockSvc.On("GetLikes", mock.Anything, "test-post", "").Return(LikesResponse{
+		Slug:      "test-post",
+		LikeCount: 5,
+	}, nil)
+
+	req := httptest.NewRequest("GET", "/api/v1/likes?slug=test-post", nil)
+	w := httptest.NewRecorder()
+
+	handler.GetLikes(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
 func TestToggleLike_InvalidSlug(t *testing.T) {
 	handler := NewHandler(nil)
 
-	reqBody := `{"slug": "", "token": "valid_token"}`
+	reqBody := `{"slug": ""}`
 	req := httptest.NewRequest("POST", "/api/v1/likes", strings.NewReader(reqBody))
+	req.Header.Set("X-Visitor-Id", "visitor-123")
 	w := httptest.NewRecorder()
 
 	handler.ToggleLike(w, req)
@@ -86,7 +106,7 @@ func TestToggleLike_InvalidSlug(t *testing.T) {
 func TestToggleLike_InvalidJSON(t *testing.T) {
 	handler := NewHandler(nil)
 
-	reqBody := `{"slug": "test-post", "token": "valid_token"` // Invalid JSON
+	reqBody := `{"slug": "test-post"` // Invalid JSON
 	req := httptest.NewRequest("POST", "/api/v1/likes", strings.NewReader(reqBody))
 	w := httptest.NewRecorder()
 
@@ -95,35 +115,34 @@ func TestToggleLike_InvalidJSON(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
-func TestToggleLike_RecaptchaFailure(t *testing.T) {
-	mockSvc := new(MockService)
-	handler := NewHandler(mockSvc)
+func TestToggleLike_MissingVisitorId(t *testing.T) {
+	handler := NewHandler(nil)
 
-	mockSvc.On("ToggleLike", mock.Anything, "test-post", "192.0.2.1", "invalid_token").Return(LikesResponse{}, ErrRecaptchaFailed)
-
-	reqBody := `{"slug": "test-post", "token": "invalid_token"}`
+	reqBody := `{"slug": "test-post"}`
 	req := httptest.NewRequest("POST", "/api/v1/likes", strings.NewReader(reqBody))
-	req.RemoteAddr = "192.0.2.1"
 	w := httptest.NewRecorder()
 
 	handler.ToggleLike(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "X-Visitor-Id")
 }
 
 func TestToggleLike_Success(t *testing.T) {
 	mockSvc := new(MockService)
 	handler := NewHandler(mockSvc)
 
-	mockSvc.On("ToggleLike", mock.Anything, "test-post", "127.0.0.1", "dummy").Return(LikesResponse{
+	visitorID := "visitor-abc-123"
+
+	mockSvc.On("ToggleLike", mock.Anything, "test-post", visitorID).Return(LikesResponse{
 		Slug:         "test-post",
 		LikeCount:    6,
 		UserHasLiked: true,
 	}, nil)
 
-	reqBody := `{"slug": "test-post", "token": "dummy"}`
+	reqBody := `{"slug": "test-post"}`
 	req := httptest.NewRequest("POST", "/api/v1/likes", strings.NewReader(reqBody))
-	req.Header.Set("X-Forwarded-For", "127.0.0.1")
+	req.Header.Set("X-Visitor-Id", visitorID)
 	w := httptest.NewRecorder()
 
 	handler.ToggleLike(w, req)
@@ -150,10 +169,10 @@ func TestGetLikes_MetadataError(t *testing.T) {
 	mockSvc := new(MockService)
 	handler := NewHandler(mockSvc)
 
-	mockSvc.On("GetLikes", mock.Anything, "test", "192.0.2.1").Return(LikesResponse{}, assert.AnError)
+	mockSvc.On("GetLikes", mock.Anything, "test", "visitor-123").Return(LikesResponse{}, assert.AnError)
 
 	req := httptest.NewRequest("GET", "/api/v1/likes?slug=test", nil)
-	req.RemoteAddr = "192.0.2.1"
+	req.Header.Set("X-Visitor-Id", "visitor-123")
 	w := httptest.NewRecorder()
 	handler.GetLikes(w, req)
 	assert.Equal(t, http.StatusInternalServerError, w.Code)

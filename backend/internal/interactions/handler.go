@@ -2,7 +2,6 @@ package interactions
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strings"
 
@@ -24,8 +23,7 @@ type LikesResponse struct {
 }
 
 type ToggleLikeRequest struct {
-	Slug  string `json:"slug"`
-	Token string `json:"token"`
+	Slug string `json:"slug"`
 }
 
 type Handler struct {
@@ -45,9 +43,9 @@ func (h *Handler) GetLikes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ipAddress := h.extractIP(r)
+	visitorID := r.Header.Get("X-Visitor-Id")
 
-	resp, err := h.Service.GetLikes(r.Context(), slug, ipAddress)
+	resp, err := h.Service.GetLikes(r.Context(), slug, visitorID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -70,18 +68,14 @@ func (h *Handler) ToggleLike(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ipAddress := h.extractIP(r)
+	visitorID := r.Header.Get("X-Visitor-Id")
+	if visitorID == "" {
+		http.Error(w, "X-Visitor-Id header is required", http.StatusBadRequest)
+		return
+	}
 
-	resp, err := h.Service.ToggleLike(r.Context(), req.Slug, ipAddress, req.Token)
+	resp, err := h.Service.ToggleLike(r.Context(), req.Slug, visitorID)
 	if err != nil {
-		if errors.Is(err, ErrInvalidRecaptcha) {
-			http.Error(w, "invalid recaptcha token", http.StatusForbidden)
-			return
-		}
-		if errors.Is(err, ErrRecaptchaFailed) {
-			http.Error(w, "recaptcha verification failed", http.StatusInternalServerError)
-			return
-		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
