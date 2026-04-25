@@ -92,7 +92,7 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	// #nosec G104 -- We are writing directly to the HTTP response writer; handling write errors here is generally unnecessary.
 	json.NewEncoder(w).Encode(map[string]string{
-		"message": "comment submitted successfully and is pending approval",
+		"message": "comment posted successfully",
 		"id":      commentID,
 	})
 }

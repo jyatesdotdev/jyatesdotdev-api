@@ -112,7 +112,7 @@ func (s *service) CreateComment(ctx context.Context, req CreateCommentRequest, i
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	commentID := uuid.New().String()
-	status := "pending"
+	status := "approved"
 
 	item := CommentItem{
 		PK:          "POST#" + req.Slug,
@@ -139,7 +139,7 @@ func (s *service) CreateComment(ctx context.Context, req CreateCommentRequest, i
 			emailCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			subject := "New Comment on " + req.Slug
-			body := "A new comment was submitted by " + sanitizedAuthorName + ".\n\nContent:\n" + sanitizedContent + "\n\nPlease review it in the admin dashboard."
+			body := "A new comment was submitted by " + sanitizedAuthorName + ".\n\nContent:\n" + sanitizedContent + "\n\nIt has been auto-approved. Use the admin dashboard to moderate if needed."
 			_ = s.emailService.SendAdminNotification(emailCtx, subject, body)
 		}()
 	}

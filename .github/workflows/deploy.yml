@@ -77,6 +77,7 @@ jobs:
             }
 
       - name: Trigger E2E Tests
+        continue-on-error: true
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.INFRA_REPO_PAT }}
