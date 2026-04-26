@@ -48,6 +48,7 @@ func (h *Handler) SubmitContact(w http.ResponseWriter, r *http.Request) {
 	if req.Website != "" {
 		// Return 200 to not tip off the bot
 		w.WriteHeader(http.StatusOK)
+		// #nosec G104 -- We are writing directly to the HTTP response writer; handling write errors here is generally unnecessary.
 		json.NewEncoder(w).Encode(map[string]string{"message": "message sent successfully"})
 		return
 	}
