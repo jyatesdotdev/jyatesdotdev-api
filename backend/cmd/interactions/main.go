@@ -16,6 +16,7 @@ import (
 	"github.com/jyates/jyatesdotdev-api/backend/internal/db"
 	"github.com/jyates/jyatesdotdev-api/backend/internal/email"
 	"github.com/jyates/jyatesdotdev-api/backend/internal/interactions"
+	"github.com/jyates/jyatesdotdev-api/backend/internal/visits"
 )
 
 var chiLambda *chiadapter.ChiLambda
@@ -37,10 +38,14 @@ func init() {
 	interactionsService := interactions.NewService(interactionsRepo, emailClient)
 	interactionsHandler := interactions.NewHandler(interactionsService)
 
-	chiLambda = chiadapter.New(newRouter(interactionsHandler))
+	visitsRepo := visits.NewRepository(dbClient)
+	visitsService := visits.NewService(visitsRepo)
+	visitsHandler := visits.NewHandler(visitsService)
+
+	chiLambda = chiadapter.New(newRouter(interactionsHandler, visitsHandler))
 }
 
-func newRouter(interactionsHandler *interactions.Handler) *chi.Mux {
+func newRouter(interactionsHandler *interactions.Handler, visitsHandler *visits.Handler) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -48,6 +53,8 @@ func newRouter(interactionsHandler *interactions.Handler) *chi.Mux {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Mount("/likes", interactionsHandler.Routes())
 		r.Mount("/comments", interactionsHandler.CommentRoutes())
+		r.Mount("/geo", visitsHandler.GeoRoutes())
+		r.Mount("/visits", visitsHandler.Routes())
 	})
 
 	return r
@@ -76,7 +83,11 @@ func main() {
 		interactionsRepo := interactions.NewRepository(dbClient)
 		interactionsService := interactions.NewService(interactionsRepo, emailClient)
 		interactionsHandler := interactions.NewHandler(interactionsService)
-		r := newRouter(interactionsHandler)
+
+		visitsRepo := visits.NewRepository(dbClient)
+		visitsService := visits.NewService(visitsRepo)
+		visitsHandler := visits.NewHandler(visitsService)
+		r := newRouter(interactionsHandler, visitsHandler)
 
 		srv := &http.Server{
 			Addr:              ":" + port,
