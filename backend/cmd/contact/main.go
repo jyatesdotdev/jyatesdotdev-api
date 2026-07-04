@@ -29,6 +29,10 @@ func init() {
 
 	contactHandler := contact.NewHandler(emailClient)
 
+	chiLambda = chiadapter.New(newRouter(contactHandler))
+}
+
+func newRouter(contactHandler *contact.Handler) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -37,7 +41,7 @@ func init() {
 		r.Mount("/contact", contactHandler.Routes())
 	})
 
-	chiLambda = chiadapter.New(r)
+	return r
 }
 
 func Handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -60,12 +64,7 @@ func main() {
 		emailClient, _ := email.NewSESClient(ctx)
 		contactHandler := contact.NewHandler(emailClient)
 
-		r := chi.NewRouter()
-		r.Use(middleware.Logger)
-		r.Use(middleware.Recoverer)
-		r.Route("/api/v1", func(r chi.Router) {
-			r.Mount("/contact", contactHandler.Routes())
-		})
+		r := newRouter(contactHandler)
 
 		srv := &http.Server{
 			Addr:              ":" + port,

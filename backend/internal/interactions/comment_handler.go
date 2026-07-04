@@ -126,8 +126,12 @@ func (h *Handler) ToggleCommentLike(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.Service.ToggleCommentLike(r.Context(), req.Slug, commentID, visitorID)
+	err := h.Service.ToggleCommentLike(r.Context(), req.Slug, commentID, visitorID, h.extractIP(r))
 	if err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

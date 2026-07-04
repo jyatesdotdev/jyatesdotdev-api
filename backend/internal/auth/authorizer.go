@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"os"
@@ -39,7 +40,10 @@ func HandleRequest(ctx context.Context, event events.APIGatewayCustomAuthorizerR
 		return events.APIGatewayCustomAuthorizerResponse{}, errors.New("Unauthorized")
 	}
 
-	if pair[0] == expectedUser && pair[1] == expectedPass {
+	// Constant-time comparison; evaluate both to avoid short-circuit timing leaks.
+	userMatch := subtle.ConstantTimeCompare([]byte(pair[0]), []byte(expectedUser))
+	passMatch := subtle.ConstantTimeCompare([]byte(pair[1]), []byte(expectedPass))
+	if userMatch&passMatch == 1 {
 		return generatePolicy("admin", "Allow", event.MethodArn), nil
 	}
 

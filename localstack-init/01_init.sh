@@ -29,10 +29,9 @@ awslocal dynamodb create-table \
         }
     ]'
 
+# Enable TTL for rate-limit items (expiresAt)
+awslocal dynamodb update-time-to-live --table-name jyatesdotdev-state --time-to-live-specification "Enabled=true, AttributeName=expiresAt"
+
 # Initialize SES
 awslocal ses verify-email-identity --email-address test@jyates.dev
 awslocal ses verify-email-identity --email-address admin@jyates.dev
-
-# Initialize SSM Parameters for Admin Credentials
-awslocal ssm put-parameter --name "/jyatesdotdev/admin/username" --type "String" --value "admin"
-awslocal ssm put-parameter --name "/jyatesdotdev/admin/password" --type "SecureString" --value "password"

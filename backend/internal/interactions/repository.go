@@ -2,6 +2,8 @@ package interactions
 
 import (
 	"context"
+	"errors"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,13 +19,57 @@ import (
 type Repository interface {
 	GetPostMetadata(ctx context.Context, slug string) (*PostMetadata, error)
 	CheckUserLike(ctx context.Context, slug, visitorID string) (bool, error)
-	ToggleLike(ctx context.Context, slug, visitorID string) error
+	ToggleLike(ctx context.Context, slug, visitorID, ipAddress string) error
 
 	GetApprovedComments(ctx context.Context, slug string) ([]CommentItem, error)
 	GetUserLikedComments(ctx context.Context, slug, visitorID string) (map[string]bool, error)
 	CreateComment(ctx context.Context, item CommentItem) error
 
-	ToggleCommentLike(ctx context.Context, slug, commentID, visitorID string) error
+	ToggleCommentLike(ctx context.Context, slug, commentID, visitorID, ipAddress string) error
+}
+
+// likeRateLimitMax is the maximum number of like ADDs a single IP may perform per UTC day.
+const likeRateLimitMax = 100
+
+// rateLimitTransactItem returns a transact item that atomically increments the
+// per-IP daily like counter, failing the whole transaction once the cap is hit.
+// The item expires via DynamoDB TTL (expiresAt) 48h after first write.
+func rateLimitTransactItem(tableName, ipAddress string) types.TransactWriteItem {
+	now := time.Now().UTC()
+	return types.TransactWriteItem{
+		Update: &types.Update{
+			TableName: aws.String(tableName),
+			Key: map[string]types.AttributeValue{
+				"PK": &types.AttributeValueMemberS{Value: "RATELIMIT#IP#" + ipAddress},
+				"SK": &types.AttributeValueMemberS{Value: "LIKES#" + now.Format("2006-01-02")},
+			},
+			UpdateExpression:    aws.String("ADD #c :one SET expiresAt = if_not_exists(expiresAt, :exp)"),
+			ConditionExpression: aws.String("attribute_not_exists(#c) OR #c < :max"),
+			ExpressionAttributeNames: map[string]string{
+				"#c": "count",
+			},
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":one": &types.AttributeValueMemberN{Value: "1"},
+				":max": &types.AttributeValueMemberN{Value: strconv.Itoa(likeRateLimitMax)},
+				":exp": &types.AttributeValueMemberN{Value: strconv.FormatInt(now.Add(48*time.Hour).Unix(), 10)},
+			},
+		},
+	}
+}
+
+// mapRateLimitError translates a TransactionCanceledException into ErrRateLimited
+// when the cancellation reason at rateLimitIdx is the rate-limit condition failing.
+// Any other error (including condition failures on other items) is returned as-is.
+func mapRateLimitError(err error, rateLimitIdx int) error {
+	if err == nil || rateLimitIdx < 0 {
+		return err
+	}
+	var tce *types.TransactionCanceledException
+	if errors.As(err, &tce) && rateLimitIdx < len(tce.CancellationReasons) &&
+		aws.ToString(tce.CancellationReasons[rateLimitIdx].Code) == "ConditionalCheckFailed" {
+		return ErrRateLimited
+	}
+	return err
 }
 
 type dynamoRepository struct {
@@ -73,7 +119,7 @@ func (r *dynamoRepository) CheckUserLike(ctx context.Context, slug, visitorID st
 	return likeOutput.Item != nil, nil
 }
 
-func (r *dynamoRepository) ToggleLike(ctx context.Context, slug, visitorID string) error {
+func (r *dynamoRepository) ToggleLike(ctx context.Context, slug, visitorID, ipAddress string) error {
 	likeOutput, err := r.db.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(r.db.TableName),
 		Key: map[string]types.AttributeValue{
@@ -87,6 +133,7 @@ func (r *dynamoRepository) ToggleLike(ctx context.Context, slug, visitorID strin
 
 	exists := likeOutput.Item != nil
 	var transItems []types.TransactWriteItem
+	rateLimitIdx := -1
 
 	if exists {
 		transItems = append(transItems, types.TransactWriteItem{
@@ -144,12 +191,14 @@ func (r *dynamoRepository) ToggleLike(ctx context.Context, slug, visitorID strin
 				ExpressionAttributeValues: expr.Values(),
 			},
 		})
+		transItems = append(transItems, rateLimitTransactItem(r.db.TableName, ipAddress))
+		rateLimitIdx = len(transItems) - 1
 	}
 
 	_, err = r.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
 		TransactItems: transItems,
 	})
-	return err
+	return mapRateLimitError(err, rateLimitIdx)
 }
 
 func (r *dynamoRepository) GetApprovedComments(ctx context.Context, slug string) ([]CommentItem, error) {
@@ -212,7 +261,7 @@ func (r *dynamoRepository) CreateComment(ctx context.Context, item CommentItem) 
 	return err
 }
 
-func (r *dynamoRepository) ToggleCommentLike(ctx context.Context, slug, commentID, visitorID string) error {
+func (r *dynamoRepository) ToggleCommentLike(ctx context.Context, slug, commentID, visitorID, ipAddress string) error {
 	likeOutput, err := r.db.GetItem(ctx, &dynamodb.GetItemInput{
 		TableName: aws.String(r.db.TableName),
 		Key: map[string]types.AttributeValue{
@@ -226,6 +275,7 @@ func (r *dynamoRepository) ToggleCommentLike(ctx context.Context, slug, commentI
 
 	exists := likeOutput.Item != nil
 	var transItems []types.TransactWriteItem
+	rateLimitIdx := -1
 
 	if exists {
 		transItems = append(transItems, types.TransactWriteItem{
@@ -302,10 +352,12 @@ func (r *dynamoRepository) ToggleCommentLike(ctx context.Context, slug, commentI
 				ExpressionAttributeValues: expr.Values(),
 			},
 		})
+		transItems = append(transItems, rateLimitTransactItem(r.db.TableName, ipAddress))
+		rateLimitIdx = len(transItems) - 1
 	}
 
 	_, err = r.db.TransactWriteItems(ctx, &dynamodb.TransactWriteItemsInput{
 		TransactItems: transItems,
 	})
-	return err
+	return mapRateLimitError(err, rateLimitIdx)
 }

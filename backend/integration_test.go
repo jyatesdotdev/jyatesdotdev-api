@@ -106,9 +106,6 @@ func TestIntegration_CommentsFlow(t *testing.T) {
 	adminSvc := admin.NewService(adminRepo)
 	adminHandler := admin.NewHandler(adminSvc)
 
-	os.Setenv("SKIP_RECAPTCHA", "true")
-	defer os.Unsetenv("SKIP_RECAPTCHA")
-
 	// Router setup
 	r := chi.NewRouter()
 	r.Mount("/api/v1/comments", interactionsHandler.CommentRoutes())
@@ -117,8 +114,8 @@ func TestIntegration_CommentsFlow(t *testing.T) {
 	slug := "integration-test-post"
 	visitorID := "integration-test-visitor"
 
-	// 2. Submit a comment (still uses IP for moderation)
-	reqBody := `{"slug": "` + slug + `", "content": "This is a great post!", "authorName": "Test User", "token": "dummy"}`
+	// 2. Submit a comment (auto-approved; IP is recorded for moderation context only)
+	reqBody := `{"slug": "` + slug + `", "content": "This is a great post!", "authorName": "Test User"}`
 	req := httptest.NewRequest("POST", "/api/v1/comments", strings.NewReader(reqBody))
 	req.Header.Set("X-Forwarded-For", "127.0.0.1")
 	w := httptest.NewRecorder()
@@ -131,20 +128,20 @@ func TestIntegration_CommentsFlow(t *testing.T) {
 	commentID := createResp["id"]
 	require.NotEmpty(t, commentID)
 
-	// 3. Verify comment is pending in admin
-	req = httptest.NewRequest("GET", "/api/v1/admin/comments", nil)
+	// 3. Verify comment is immediately approved in admin
+	req = httptest.NewRequest("GET", "/api/v1/admin/comments?status=approved", nil)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	var pendingResp []admin.CommentResponse
-	err = json.NewDecoder(w.Body).Decode(&pendingResp)
+	var adminResp []admin.CommentResponse
+	err = json.NewDecoder(w.Body).Decode(&adminResp)
 	require.NoError(t, err)
-	require.Len(t, pendingResp, 1)
-	assert.Equal(t, commentID, pendingResp[0].ID)
-	assert.Equal(t, "pending", pendingResp[0].Status)
+	require.Len(t, adminResp, 1)
+	assert.Equal(t, commentID, adminResp[0].ID)
+	assert.Equal(t, "approved", adminResp[0].Status)
 
-	// 4. Verify public comments are empty (since it's pending)
+	// 4. Verify comment is immediately visible publicly
 	req = httptest.NewRequest("GET", "/api/v1/comments?slug="+slug, nil)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -153,16 +150,34 @@ func TestIntegration_CommentsFlow(t *testing.T) {
 	var publicResp []interactions.CommentResponse
 	err = json.NewDecoder(w.Body).Decode(&publicResp)
 	require.NoError(t, err)
+	require.Len(t, publicResp, 1)
+	assert.Equal(t, commentID, publicResp[0].ID)
+	assert.Equal(t, "This is a great post!", publicResp[0].Content)
+	assert.Equal(t, 0, publicResp[0].LikeCount)
+
+	// 5. Admin rejects the comment; it disappears from public view
+	reqBody = `{"slug": "` + slug + `", "status": "rejected"}`
+	req = httptest.NewRequest("PUT", "/api/v1/admin/comments/"+commentID, strings.NewReader(reqBody))
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	req = httptest.NewRequest("GET", "/api/v1/comments?slug="+slug, nil)
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	err = json.NewDecoder(w.Body).Decode(&publicResp)
+	require.NoError(t, err)
 	require.Len(t, publicResp, 0)
 
-	// 5. Admin approves comment
+	// 6. Admin re-approves the comment
 	reqBody = `{"slug": "` + slug + `", "status": "approved"}`
 	req = httptest.NewRequest("PUT", "/api/v1/admin/comments/"+commentID, strings.NewReader(reqBody))
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
 
-	// 6. Verify comment is now visible publicly
 	req = httptest.NewRequest("GET", "/api/v1/comments?slug="+slug, nil)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
@@ -171,9 +186,6 @@ func TestIntegration_CommentsFlow(t *testing.T) {
 	err = json.NewDecoder(w.Body).Decode(&publicResp)
 	require.NoError(t, err)
 	require.Len(t, publicResp, 1)
-	assert.Equal(t, commentID, publicResp[0].ID)
-	assert.Equal(t, "This is a great post!", publicResp[0].Content)
-	assert.Equal(t, 0, publicResp[0].LikeCount)
 
 	// 7. Toggle Like on comment (uses X-Visitor-Id now)
 	reqBody = `{"slug": "` + slug + `"}`
@@ -199,36 +211,33 @@ func TestIntegration_CommentsFlow(t *testing.T) {
 }
 
 func TestIntegration_ContactFlow(t *testing.T) {
-	os.Setenv("SKIP_RECAPTCHA", "true")
-	defer os.Unsetenv("SKIP_RECAPTCHA")
-
 	// Router setup
 	r := chi.NewRouter()
-	
+
 	// Create dummy email service (nil API internally handles prints and ignores)
 	emailSvc, _ := email.NewSESClient(context.Background())
 	contactHandler := contact.NewHandler(emailSvc)
-	
+
 	r.Mount("/api/v1/contact", contactHandler.Routes())
 
 	// 1. Submit contact form successfully
-	reqBody := `{"name": "Integration User", "email": "integration@example.com", "message": "Test message", "token": "dummy"}`
+	reqBody := `{"name": "Integration User", "email": "integration@example.com", "message": "Test message"}`
 	req := httptest.NewRequest("POST", "/api/v1/contact", strings.NewReader(reqBody))
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-	
+
 	require.Equal(t, http.StatusOK, w.Code)
-	
+
 	var createResp map[string]string
 	err := json.NewDecoder(w.Body).Decode(&createResp)
 	require.NoError(t, err)
 	assert.Equal(t, "message sent successfully", createResp["message"])
-	
+
 	// 2. Submit bad request
-	badReqBody := `{"name": "", "email": "integration@example.com", "message": "Test message", "token": "dummy"}`
+	badReqBody := `{"name": "", "email": "integration@example.com", "message": "Test message"}`
 	req = httptest.NewRequest("POST", "/api/v1/contact", strings.NewReader(badReqBody))
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
-	
+
 	require.Equal(t, http.StatusBadRequest, w.Code)
 }

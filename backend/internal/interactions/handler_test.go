@@ -21,8 +21,8 @@ func (m *MockService) GetLikes(ctx context.Context, slug, visitorID string) (Lik
 	return args.Get(0).(LikesResponse), args.Error(1)
 }
 
-func (m *MockService) ToggleLike(ctx context.Context, slug, visitorID string) (LikesResponse, error) {
-	args := m.Called(ctx, slug, visitorID)
+func (m *MockService) ToggleLike(ctx context.Context, slug, visitorID, ipAddress string) (LikesResponse, error) {
+	args := m.Called(ctx, slug, visitorID, ipAddress)
 	return args.Get(0).(LikesResponse), args.Error(1)
 }
 
@@ -36,8 +36,8 @@ func (m *MockService) CreateComment(ctx context.Context, req CreateCommentReques
 	return args.String(0), args.Error(1)
 }
 
-func (m *MockService) ToggleCommentLike(ctx context.Context, slug, commentID, visitorID string) error {
-	args := m.Called(ctx, slug, commentID, visitorID)
+func (m *MockService) ToggleCommentLike(ctx context.Context, slug, commentID, visitorID, ipAddress string) error {
+	args := m.Called(ctx, slug, commentID, visitorID, ipAddress)
 	return args.Error(0)
 }
 
@@ -134,7 +134,7 @@ func TestToggleLike_Success(t *testing.T) {
 
 	visitorID := "visitor-abc-123"
 
-	mockSvc.On("ToggleLike", mock.Anything, "test-post", visitorID).Return(LikesResponse{
+	mockSvc.On("ToggleLike", mock.Anything, "test-post", visitorID, "192.0.2.1").Return(LikesResponse{
 		Slug:         "test-post",
 		LikeCount:    6,
 		UserHasLiked: true,
@@ -143,6 +143,7 @@ func TestToggleLike_Success(t *testing.T) {
 	reqBody := `{"slug": "test-post"}`
 	req := httptest.NewRequest("POST", "/api/v1/likes", strings.NewReader(reqBody))
 	req.Header.Set("X-Visitor-Id", visitorID)
+	req.Header.Set("X-Forwarded-For", "192.0.2.1")
 	w := httptest.NewRecorder()
 
 	handler.ToggleLike(w, req)
@@ -154,6 +155,26 @@ func TestToggleLike_Success(t *testing.T) {
 	assert.Equal(t, "test-post", resp.Slug)
 	assert.Equal(t, 6, resp.LikeCount)
 	assert.True(t, resp.UserHasLiked)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestToggleLike_RateLimited(t *testing.T) {
+	mockSvc := new(MockService)
+	handler := NewHandler(mockSvc)
+
+	visitorID := "visitor-abc-123"
+
+	mockSvc.On("ToggleLike", mock.Anything, "test-post", visitorID, "192.0.2.1").Return(LikesResponse{}, ErrRateLimited)
+
+	reqBody := `{"slug": "test-post"}`
+	req := httptest.NewRequest("POST", "/api/v1/likes", strings.NewReader(reqBody))
+	req.Header.Set("X-Visitor-Id", visitorID)
+	req.Header.Set("X-Forwarded-For", "192.0.2.1")
+	w := httptest.NewRecorder()
+
+	handler.ToggleLike(w, req)
+
+	assert.Equal(t, http.StatusTooManyRequests, w.Code)
 	mockSvc.AssertExpectations(t)
 }
 

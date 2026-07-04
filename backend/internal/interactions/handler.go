@@ -2,6 +2,7 @@ package interactions
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -74,8 +75,12 @@ func (h *Handler) ToggleLike(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := h.Service.ToggleLike(r.Context(), req.Slug, visitorID)
+	resp, err := h.Service.ToggleLike(r.Context(), req.Slug, visitorID, h.extractIP(r))
 	if err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

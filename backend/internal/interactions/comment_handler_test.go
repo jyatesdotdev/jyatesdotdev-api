@@ -150,11 +150,12 @@ func TestToggleCommentLike_Success(t *testing.T) {
 
 	visitorID := "visitor-abc-123"
 
-	mockSvc.On("ToggleCommentLike", mock.Anything, "test-post", "123", visitorID).Return(nil)
+	mockSvc.On("ToggleCommentLike", mock.Anything, "test-post", "123", visitorID, "192.0.2.1").Return(nil)
 
 	reqBody := `{"slug": "test-post"}`
 	req := httptest.NewRequest("POST", "/123/like", strings.NewReader(reqBody))
 	req.Header.Set("X-Visitor-Id", visitorID)
+	req.Header.Set("X-Forwarded-For", "192.0.2.1")
 
 	rctx := chi.NewRouteContext()
 	rctx.URLParams.Add("id", "123")
@@ -165,6 +166,31 @@ func TestToggleCommentLike_Success(t *testing.T) {
 	handler.ToggleCommentLike(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestToggleCommentLike_RateLimited(t *testing.T) {
+	mockSvc := new(MockService)
+	handler := NewHandler(mockSvc)
+
+	visitorID := "visitor-abc-123"
+
+	mockSvc.On("ToggleCommentLike", mock.Anything, "test-post", "123", visitorID, "192.0.2.1").Return(ErrRateLimited)
+
+	reqBody := `{"slug": "test-post"}`
+	req := httptest.NewRequest("POST", "/123/like", strings.NewReader(reqBody))
+	req.Header.Set("X-Visitor-Id", visitorID)
+	req.Header.Set("X-Forwarded-For", "192.0.2.1")
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "123")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	w := httptest.NewRecorder()
+
+	handler.ToggleCommentLike(w, req)
+
+	assert.Equal(t, http.StatusTooManyRequests, w.Code)
 	mockSvc.AssertExpectations(t)
 }
 

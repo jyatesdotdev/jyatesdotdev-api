@@ -1,0 +1,20 @@
+# cmd/ — Lambda entry points
+
+| Function | Routes | Notes |
+|---|---|---|
+| `interactions` | `/api/v1/likes`, `/api/v1/comments`, `/api/v1/comments/{id}/like` | Likes + comments; DynamoDB + SES (admin notification on new comment, sent synchronously, best-effort) |
+| `contact` | `/api/v1/contact` (POST) | Contact form → SES; honeypot-protected; no DB |
+| `admin` | `/api/v1/admin/comments...` (GET/PUT/DELETE) | Comment moderation; protected in prod by the authorizer |
+| `authorizer` | n/a — `lambda.Start(auth.HandleRequest)` | API Gateway TOKEN authorizer doing Basic Auth; **not a chi app** |
+
+Gotchas:
+
+- Each HTTP lambda builds its router in one `newRouter(...)` function, called from both
+  `init()` and `main()`'s local-server branch — edit routes there.
+- The **authorizer is never deployed locally** — `deploy-localstack.sh` skips it and the
+  local API Gateway uses `authorization NONE`, so admin endpoints are open in LocalStack.
+  It is only built/deployed by CI.
+- `admin/main.go` mounts the handler under `/api/v1/admin` and the handler's own routes
+  are prefixed `/comments` — the effective paths are `/api/v1/admin/comments[/{id}]`.
+- Prod builds are linux/arm64 `provided.al2023` with handler binary named `bootstrap`;
+  local LocalStack builds are amd64.

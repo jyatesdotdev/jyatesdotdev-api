@@ -31,18 +31,21 @@ func init() {
 	adminService := admin.NewService(adminRepo)
 	adminHandler := admin.NewHandler(adminService)
 
+	chiLambda = chiadapter.New(newRouter(adminHandler))
+}
+
+func newRouter(adminHandler *admin.Handler) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
+	// The handler's own routes are prefixed with /comments, so the effective
+	// paths are /api/v1/admin/comments[/{id}].
 	r.Route("/api/v1/admin", func(r chi.Router) {
-		// All endpoints in admin handler are already prefixed with /comments or other inside its Routes()
-		// Wait, the handler routes are r.Get("/comments", ...)
-		// Let's mount the routes directly to the admin path
 		r.Mount("/", adminHandler.Routes())
 	})
 
-	chiLambda = chiadapter.New(r)
+	return r
 }
 
 func Handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -67,12 +70,7 @@ func main() {
 		adminService := admin.NewService(adminRepo)
 		adminHandler := admin.NewHandler(adminService)
 
-		r := chi.NewRouter()
-		r.Use(middleware.Logger)
-		r.Use(middleware.Recoverer)
-		r.Route("/api/v1/admin", func(r chi.Router) {
-			r.Mount("/", adminHandler.Routes())
-		})
+		r := newRouter(adminHandler)
 
 		srv := &http.Server{
 			Addr:              ":" + port,

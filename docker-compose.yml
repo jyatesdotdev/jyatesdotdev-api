@@ -34,7 +34,6 @@ services:
       - AWS_REGION=us-east-1
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
-      - SKIP_RECAPTCHA=true
       - SES_FROM_EMAIL=test@jyates.dev
       - SES_ADMIN_EMAIL=admin@jyates.dev
     depends_on:

@@ -3,6 +3,8 @@ package interactions
 import (
 	"context"
 	"errors"
+	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -15,15 +17,16 @@ import (
 var (
 	ErrInvalidInput = errors.New("invalid input after sanitization")
 	ErrHoneypot     = errors.New("honeypot field was filled")
+	ErrRateLimited  = errors.New("rate limit exceeded")
 )
 
 type Service interface {
 	GetLikes(ctx context.Context, slug, visitorID string) (LikesResponse, error)
-	ToggleLike(ctx context.Context, slug, visitorID string) (LikesResponse, error)
+	ToggleLike(ctx context.Context, slug, visitorID, ipAddress string) (LikesResponse, error)
 
 	GetComments(ctx context.Context, slug, visitorID string) ([]CommentResponse, error)
 	CreateComment(ctx context.Context, req CreateCommentRequest, ipAddress string) (string, error)
-	ToggleCommentLike(ctx context.Context, slug, commentID, visitorID string) error
+	ToggleCommentLike(ctx context.Context, slug, commentID, visitorID, ipAddress string) error
 }
 
 type service struct {
@@ -56,8 +59,8 @@ func (s *service) GetLikes(ctx context.Context, slug, visitorID string) (LikesRe
 	}, nil
 }
 
-func (s *service) ToggleLike(ctx context.Context, slug, visitorID string) (LikesResponse, error) {
-	if err := s.repo.ToggleLike(ctx, slug, visitorID); err != nil {
+func (s *service) ToggleLike(ctx context.Context, slug, visitorID, ipAddress string) (LikesResponse, error) {
+	if err := s.repo.ToggleLike(ctx, slug, visitorID, ipAddress); err != nil {
 		return LikesResponse{}, err
 	}
 
@@ -113,6 +116,9 @@ func (s *service) CreateComment(ctx context.Context, req CreateCommentRequest, i
 	now := time.Now().UTC().Format(time.RFC3339)
 	commentID := uuid.New().String()
 	status := "approved"
+	if os.Getenv("AUTO_APPROVE") == "false" {
+		status = "pending"
+	}
 
 	item := CommentItem{
 		PK:          "POST#" + req.Slug,
@@ -134,19 +140,25 @@ func (s *service) CreateComment(ctx context.Context, req CreateCommentRequest, i
 	}
 
 	if s.emailService != nil {
-		// #nosec G118
-		go func() {
-			emailCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			subject := "New Comment on " + req.Slug
-			body := "A new comment was submitted by " + sanitizedAuthorName + ".\n\nContent:\n" + sanitizedContent + "\n\nIt has been auto-approved. Use the admin dashboard to moderate if needed."
-			_ = s.emailService.SendAdminNotification(emailCtx, subject, body)
-		}()
+		// Best-effort synchronous send: a failed email must not fail the comment
+		// creation, but Lambda freezes the environment after the handler returns,
+		// so it cannot run in a goroutine.
+		emailCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		subject := "New Comment on " + req.Slug
+		statusNote := "It has been auto-approved. Use the admin dashboard to moderate if needed."
+		if status == "pending" {
+			statusNote = "It is pending review. Use the admin dashboard to approve or reject it."
+		}
+		body := "A new comment was submitted by " + sanitizedAuthorName + ".\n\nContent:\n" + sanitizedContent + "\n\n" + statusNote
+		if err := s.emailService.SendAdminNotification(emailCtx, subject, body); err != nil {
+			log.Printf("failed to send admin notification email: %v", err)
+		}
 	}
 
 	return commentID, nil
 }
 
-func (s *service) ToggleCommentLike(ctx context.Context, slug, commentID, visitorID string) error {
-	return s.repo.ToggleCommentLike(ctx, slug, commentID, visitorID)
+func (s *service) ToggleCommentLike(ctx context.Context, slug, commentID, visitorID, ipAddress string) error {
+	return s.repo.ToggleCommentLike(ctx, slug, commentID, visitorID, ipAddress)
 }

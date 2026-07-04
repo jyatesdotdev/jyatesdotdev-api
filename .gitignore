@@ -3,3 +3,8 @@
 .idea/
 .venv/
 *.zip
+*.iml
+bootstrap
+bin/
+coverage.out
+response.json

@@ -37,6 +37,10 @@ func init() {
 	interactionsService := interactions.NewService(interactionsRepo, emailClient)
 	interactionsHandler := interactions.NewHandler(interactionsService)
 
+	chiLambda = chiadapter.New(newRouter(interactionsHandler))
+}
+
+func newRouter(interactionsHandler *interactions.Handler) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -46,7 +50,7 @@ func init() {
 		r.Mount("/comments", interactionsHandler.CommentRoutes())
 	})
 
-	chiLambda = chiadapter.New(r)
+	return r
 }
 
 func Handler(ctx context.Context, req events.APIGatewayProxyRequest) (events.APIGatewayProxyResponse, error) {
@@ -65,10 +69,6 @@ func main() {
 		// #nosec G706 -- The port value is sourced from our own environment variables at startup, not from untrusted user input.
 		log.Printf("Starting server on port %s", port)
 
-		// Re-initialize router without the proxy for local dev if needed,
-		// but for now, we can just use the chi router directly.
-		// Since chiLambda.Proxy calls the router, we can just grab the router from somewhere
-		// or just rebuild it here.
 		ctx := context.Background()
 		dbClient, _ := db.NewClient(ctx)
 		emailClient, _ := email.NewSESClient(ctx)
@@ -76,13 +76,7 @@ func main() {
 		interactionsRepo := interactions.NewRepository(dbClient)
 		interactionsService := interactions.NewService(interactionsRepo, emailClient)
 		interactionsHandler := interactions.NewHandler(interactionsService)
-		r := chi.NewRouter()
-		r.Use(middleware.Logger)
-		r.Use(middleware.Recoverer)
-		r.Route("/api/v1", func(r chi.Router) {
-			r.Mount("/likes", interactionsHandler.Routes())
-			r.Mount("/comments", interactionsHandler.CommentRoutes())
-		})
+		r := newRouter(interactionsHandler)
 
 		srv := &http.Server{
 			Addr:              ":" + port,
