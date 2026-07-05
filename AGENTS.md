@@ -9,8 +9,7 @@ This level holds LocalStack tooling, CI, and (stale) spec docs.
 `requirements.md`, `design.md`, `tasks.md` are **stale migration-planning docs**. The
 code has diverged from them: reCAPTCHA was replaced with honeypot fields, comments are
 **auto-approved by default** (`AUTO_APPROVE=false` holds them pending), and likes are
-keyed by `X-Visitor-Id` header (with a per-IP daily rate limit on adds). Parts of
-README.md are also stale (says Go 1.22 and documents reCAPTCHA/IP-based likes).
+keyed by `X-Visitor-Id` header (with a per-IP daily rate limit on adds).
 **Trust the code, not these docs.**
 
 ## Local dev (LocalStack, run from this directory)
@@ -37,4 +36,4 @@ README.md are also stale (says Go 1.22 and documents reCAPTCHA/IP-based likes).
   `jyatesdotdev-infra` and `run_e2e` to `jyatesdotdev-integration`.
 - `security.yml` — gosec + `go test -short ./...`.
 - `codeql.yml` — CodeQL Go analysis.
-- Note: CI pins Go 1.22 while `backend/go.mod` says 1.26.2 — a known inconsistency.
+- CI reads the Go version from `backend/go.mod` (currently 1.26.2) via `go-version-file`, so there is no version pin to drift.

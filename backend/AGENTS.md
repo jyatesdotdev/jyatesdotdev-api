@@ -46,6 +46,8 @@ anything else → auto-approved), `PORT`.
 | `COMMENT#<uuid>` | `LIKE#<visitorID>` | comment like |
 | `POST#<slug>#USER#<visitorID>` | `LIKE#COMMENT#<uuid>` | reverse index: visitor's comment likes |
 | `RATELIMIT#IP#<ip>` | `LIKES#<yyyy-mm-dd UTC>` | per-IP daily like-add counter (cap 100 → 429; TTL via `expiresAt`, +48h) |
+| `RATELIMIT#IP#<ip>` | `VISITS#<yyyy-mm-dd UTC>` | per-IP daily visit-record counter (cap 20 → 429; TTL via `expiresAt`, +48h) |
+| `STATS#GEO` | `COUNTRY#<alpha2>` | per-country visit counter (atomic `ADD count`; stores `countryName`) |
 
 Approved comments are read via GSI1 (`STATUS#approved` + `begins_with(POST#<slug>#)`).
 

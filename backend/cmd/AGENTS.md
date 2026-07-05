@@ -2,7 +2,7 @@
 
 | Function | Routes | Notes |
 |---|---|---|
-| `interactions` | `/api/v1/likes`, `/api/v1/comments`, `/api/v1/comments/{id}/like` | Likes + comments; DynamoDB + SES (admin notification on new comment, sent synchronously, best-effort) |
+| `interactions` | `/api/v1/likes`, `/api/v1/comments`, `/api/v1/comments/{id}/like`, `/api/v1/geo`, `/api/v1/visits` | Likes + comments + visits/geo; DynamoDB + SES (admin notification on new comment, sent synchronously, best-effort). `/geo` reflects CloudFront-Viewer-* headers; `/visits` (GET/POST) tracks per-country visit counts |
 | `contact` | `/api/v1/contact` (POST) | Contact form → SES; honeypot-protected; no DB |
 | `admin` | `/api/v1/admin/comments...` (GET/PUT/DELETE) | Comment moderation; protected in prod by the authorizer |
 | `authorizer` | n/a — `lambda.Start(auth.HandleRequest)` | API Gateway TOKEN authorizer doing Basic Auth; **not a chi app** |

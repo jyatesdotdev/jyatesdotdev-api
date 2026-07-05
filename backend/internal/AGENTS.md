@@ -4,6 +4,7 @@
 |---|---|
 | `db` | `DynamoDBAPI` interface + `Client{api, TableName}`; the interface exists so repos are mockable. `NewClient` reads `DYNAMODB_TABLE_NAME` / `DYNAMODB_ENDPOINT` (local endpoint forces region us-east-1). |
 | `interactions` | Likes + comments: handler (`Routes()` for likes, `CommentRoutes()` for comments), service, DynamoDB repo. Atomic like counts via `TransactWriteItems` + `ADD likeCount`. |
+| `visits` | Geo/visitor map. `GeoRoutes()` serves `GET /geo` (whereami — reflects the `CloudFront-Viewer-*` request headers straight back). `Routes()` serves `GET /visits` (aggregate per-country counts, sorted desc, plus caller's own country as `you`) and `POST /visits` (atomically bumps `PK=STATS#GEO`, `SK=COUNTRY#<alpha2>` via `TransactWriteItems` + `ADD count`, gated by a per-IP daily rate limit of **20/day**). Requests without a valid 2-letter `CloudFront-Viewer-Country` (e.g. local dev) are a silent 204 no-op. |
 | `admin` | Comment moderation: list by status (defaults to `pending`), update status (`approved`/`pending`/`rejected`), delete. |
 | `auth` | Basic-Auth TOKEN authorizer. Reads `ADMIN_USERNAME`/`ADMIN_PASSWORD` **env vars** — denies if unset. |
 | `email` | `Service` interface. SES **v1** when `SES_ENDPOINT` set (LocalStack — v2 is pro-only), SES **v2** in prod. No-op client when `SES_FROM_EMAIL`/`SES_ADMIN_EMAIL` unset. |
