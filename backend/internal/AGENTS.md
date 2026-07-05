@@ -9,7 +9,9 @@
 | `auth` | Basic-Auth TOKEN authorizer. Reads `ADMIN_USERNAME`/`ADMIN_PASSWORD` **env vars** — denies if unset. |
 | `email` | `Service` interface. SES **v1** when `SES_ENDPOINT` set (LocalStack — v2 is pro-only), SES **v2** in prod. No-op client when `SES_FROM_EMAIL`/`SES_ADMIN_EMAIL` unset. |
 | `contact` | Contact-form handler: honeypot + validation → email. |
-| `recaptcha` | **DEAD CODE** — not imported anywhere since the honeypot migration. Do not wire it back in without being asked. |
+
+(A `recaptcha` package existed before the honeypot migration; it has been fully
+deleted — don't reintroduce it without being asked.)
 
 ## Behavioral gotchas (things the docs get wrong)
 
@@ -35,6 +37,6 @@
 ## Tests
 
 Unit tests are handler-level with testify/mock (hand-written mocks) and `httptest`.
-The repo-root `integration_test.go` (build tag `integration`) asserts the default
+The module-root `backend/integration_test.go` (build tag `integration`) asserts the default
 auto-approve flow (new comments immediately `approved`) — don't run it with
 `AUTO_APPROVE=false`.
