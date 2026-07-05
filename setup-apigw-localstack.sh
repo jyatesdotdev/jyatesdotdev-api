@@ -78,7 +78,15 @@ ADMIN_COMMENT_ID_RES_ID=$(create_resource "$ADMIN_COMMENTS_RES_ID" "{commentId}"
 setup_lambda_proxy "$ADMIN_COMMENT_ID_RES_ID" "admin-api" "PUT"
 setup_lambda_proxy "$ADMIN_COMMENT_ID_RES_ID" "admin-api" "DELETE"
 
-# 9. Create Deployment
+# 9. Create /geo and /visits (visitor map — interactions lambda)
+GEO_RES_ID=$(create_resource "$V1_RES_ID" "geo")
+setup_lambda_proxy "$GEO_RES_ID" "interactions-api" "GET"
+
+VISITS_RES_ID=$(create_resource "$V1_RES_ID" "visits")
+setup_lambda_proxy "$VISITS_RES_ID" "interactions-api" "GET"
+setup_lambda_proxy "$VISITS_RES_ID" "interactions-api" "POST"
+
+# 10. Create Deployment
 aws --endpoint-url=$ENDPOINT apigateway create-deployment --rest-api-id $API_ID --stage-name v1 --region $REGION > /dev/null
 
 echo "✅ API Gateway set up successfully!"
