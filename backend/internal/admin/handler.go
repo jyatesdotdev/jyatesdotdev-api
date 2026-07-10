@@ -3,11 +3,19 @@ package admin
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/jyates/jyatesdotdev-api/backend/internal/requestmeta"
 )
+
+const adminBodyLimit = 2 * 1024
+
+var identifierPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
 
 type Handler struct {
 	Service Service
@@ -60,10 +68,15 @@ func (h *Handler) GetComments(w http.ResponseWriter, r *http.Request) {
 	if statusFilter == "" {
 		statusFilter = "pending"
 	}
+	if statusFilter != "pending" && statusFilter != "approved" && statusFilter != "rejected" {
+		http.Error(w, "invalid status", http.StatusBadRequest)
+		return
+	}
 
 	responses, err := h.Service.GetComments(ctx, statusFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("get admin comments failed: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -73,14 +86,18 @@ func (h *Handler) GetComments(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UpdateCommentStatus(w http.ResponseWriter, r *http.Request) {
-	commentID := chi.URLParam(r, "commentId")
-	if commentID == "" {
-		http.Error(w, "commentId is required", http.StatusBadRequest)
+	commentID := strings.TrimSpace(chi.URLParam(r, "commentId"))
+	if !validIdentifier(commentID) {
+		http.Error(w, "invalid commentId", http.StatusBadRequest)
 		return
 	}
 
 	var req UpdateStatusRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := requestmeta.DecodeJSON(w, r, &req, adminBodyLimit); err != nil {
+		if errors.Is(err, requestmeta.ErrBodyTooLarge) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -88,8 +105,8 @@ func (h *Handler) UpdateCommentStatus(w http.ResponseWriter, r *http.Request) {
 	req.Slug = strings.TrimSpace(req.Slug)
 	req.Status = strings.TrimSpace(req.Status)
 
-	if req.Slug == "" || req.Status == "" {
-		http.Error(w, "slug and status are required", http.StatusBadRequest)
+	if !validIdentifier(req.Slug) || (req.Status != "approved" && req.Status != "pending" && req.Status != "rejected") {
+		http.Error(w, "invalid slug or status", http.StatusBadRequest)
 		return
 	}
 
@@ -103,10 +120,12 @@ func (h *Handler) UpdateCommentStatus(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "comment not found", http.StatusNotFound)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("update comment status failed: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	// #nosec G104 -- We are writing directly to the HTTP response writer; handling write errors here is generally unnecessary.
 	json.NewEncoder(w).Encode(map[string]string{
@@ -115,35 +134,49 @@ func (h *Handler) UpdateCommentStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteComment(w http.ResponseWriter, r *http.Request) {
-	commentID := chi.URLParam(r, "commentId")
-	if commentID == "" {
-		http.Error(w, "commentId is required", http.StatusBadRequest)
+	commentID := strings.TrimSpace(chi.URLParam(r, "commentId"))
+	if !validIdentifier(commentID) {
+		http.Error(w, "invalid commentId", http.StatusBadRequest)
 		return
 	}
 
 	var req DeleteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := requestmeta.DecodeJSON(w, r, &req, adminBodyLimit); err != nil {
+		if errors.Is(err, requestmeta.ErrBodyTooLarge) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	req.Slug = strings.TrimSpace(req.Slug)
-	if req.Slug == "" {
-		http.Error(w, "slug is required", http.StatusBadRequest)
+	if !validIdentifier(req.Slug) {
+		http.Error(w, "invalid slug", http.StatusBadRequest)
 		return
 	}
 
 	err := h.Service.DeleteComment(r.Context(), req.Slug, commentID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		if errors.Is(err, ErrCommentNotFound) {
+			http.Error(w, "comment not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("delete comment failed: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	// #nosec G104 -- We are writing directly to the HTTP response writer; handling write errors here is generally unnecessary.
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "comment deleted successfully",
 	})
+}
+
+func validIdentifier(value string) bool {
+	return identifierPattern.MatchString(value)
 }
 
 func (h *Handler) Routes() chi.Router {

@@ -3,10 +3,13 @@ package interactions
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/jyates/jyatesdotdev-api/backend/internal/requestmeta"
 )
 
 type PostMetadata struct {
@@ -38,17 +41,22 @@ func NewHandler(service Service) *Handler {
 }
 
 func (h *Handler) GetLikes(w http.ResponseWriter, r *http.Request) {
-	slug := r.URL.Query().Get("slug")
-	if slug == "" {
-		http.Error(w, "slug is required", http.StatusBadRequest)
+	slug := strings.TrimSpace(r.URL.Query().Get("slug"))
+	if !validIdentifier(slug) {
+		http.Error(w, "invalid slug", http.StatusBadRequest)
 		return
 	}
 
-	visitorID := r.Header.Get("X-Visitor-Id")
+	visitorID := strings.TrimSpace(r.Header.Get("X-Visitor-Id"))
+	if visitorID != "" && !validIdentifier(visitorID) {
+		http.Error(w, "invalid X-Visitor-Id header", http.StatusBadRequest)
+		return
+	}
 
 	resp, err := h.Service.GetLikes(r.Context(), slug, visitorID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("get likes failed: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -59,29 +67,39 @@ func (h *Handler) GetLikes(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) ToggleLike(w http.ResponseWriter, r *http.Request) {
 	var req ToggleLikeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := requestmeta.DecodeJSON(w, r, &req, toggleBodyLimit); err != nil {
+		if errors.Is(err, requestmeta.ErrBodyTooLarge) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	if req.Slug == "" {
-		http.Error(w, "slug is required", http.StatusBadRequest)
+	req.Slug = strings.TrimSpace(req.Slug)
+	if !validIdentifier(req.Slug) {
+		http.Error(w, "invalid slug", http.StatusBadRequest)
 		return
 	}
 
-	visitorID := r.Header.Get("X-Visitor-Id")
-	if visitorID == "" {
-		http.Error(w, "X-Visitor-Id header is required", http.StatusBadRequest)
+	visitorID := strings.TrimSpace(r.Header.Get("X-Visitor-Id"))
+	if !validIdentifier(visitorID) {
+		http.Error(w, "valid X-Visitor-Id header is required", http.StatusBadRequest)
 		return
 	}
 
-	resp, err := h.Service.ToggleLike(r.Context(), req.Slug, visitorID, h.extractIP(r))
+	resp, err := h.Service.ToggleLike(r.Context(), req.Slug, visitorID, requestmeta.ClientIP(r))
 	if err != nil {
-		if errors.Is(err, ErrRateLimited) {
+		switch {
+		case errors.Is(err, ErrRateLimited):
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 			return
+		case errors.Is(err, ErrConflict):
+			http.Error(w, "like state changed; retry the request", http.StatusConflict)
+			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("toggle like failed: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -95,15 +113,4 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/", h.GetLikes)
 	r.Post("/", h.ToggleLike)
 	return r
-}
-
-func (h *Handler) extractIP(r *http.Request) string {
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		if ip, _, ok := strings.Cut(xff, ","); ok {
-			return strings.TrimSpace(ip)
-		}
-		return strings.TrimSpace(xff)
-	}
-	return r.RemoteAddr
 }

@@ -38,7 +38,7 @@ DELETE /api/v1/admin/comments/:id     {slug}
 
 - **Honeypot**: `website` is a hidden form field that must be empty; submissions that fill it are rejected (contact returns a fake 200 so bots aren't tipped off). There is no reCAPTCHA.
 - **Likes** are deduplicated by the `X-Visitor-Id` request header (required — requests without it get a 400), not by IP.
-- **Comments** are created **auto-approved**; the admin dashboard can flip them to `pending`/`rejected` after the fact. The client IP (first entry of `X-Forwarded-For`) is stored on comment records for moderation context only.
+- **Comments** require a valid email address and are pending unless `AUTO_APPROVE=true`; the admin dashboard can approve or reject them. The CloudFront-generated viewer address is stored for moderation context, and comment creation is limited per IP/day.
 
 ### DynamoDB Schema
 

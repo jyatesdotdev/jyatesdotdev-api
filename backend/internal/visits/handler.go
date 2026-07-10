@@ -3,11 +3,13 @@ package visits
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"regexp"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/jyates/jyatesdotdev-api/backend/internal/requestmeta"
 )
 
 // GeoResponse reflects the CloudFront-Viewer-* headers CloudFront adds at the
@@ -65,13 +67,14 @@ func (h *Handler) RecordVisit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.Service.RecordVisit(r.Context(), geo.Country, geo.CountryName, extractIP(r))
+	err := h.Service.RecordVisit(r.Context(), geo.Country, geo.CountryName, requestmeta.ClientIP(r))
 	if err != nil {
 		if errors.Is(err, ErrRateLimited) {
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("record visit failed: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -80,7 +83,8 @@ func (h *Handler) RecordVisit(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.Service.GetStats(r.Context())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("get visit stats failed: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -110,15 +114,4 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/", h.GetStats)
 	r.Post("/", h.RecordVisit)
 	return r
-}
-
-func extractIP(r *http.Request) string {
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		if ip, _, ok := strings.Cut(xff, ","); ok {
-			return strings.TrimSpace(ip)
-		}
-		return strings.TrimSpace(xff)
-	}
-	return r.RemoteAddr
 }

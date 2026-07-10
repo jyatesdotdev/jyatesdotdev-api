@@ -37,8 +37,8 @@ func (m *MockRepository) GetUserLikedComments(ctx context.Context, slug, visitor
 	return args.Get(0).(map[string]bool), args.Error(1)
 }
 
-func (m *MockRepository) CreateComment(ctx context.Context, item CommentItem) error {
-	args := m.Called(ctx, item)
+func (m *MockRepository) CreateComment(ctx context.Context, item CommentItem, ipAddress string) error {
+	args := m.Called(ctx, item, ipAddress)
 	return args.Error(0)
 }
 
@@ -57,7 +57,7 @@ func TestCreateComment_AutoApproveDisabled(t *testing.T) {
 	mockRepo.On("CreateComment", mock.Anything, mock.MatchedBy(func(item CommentItem) bool {
 		created = item
 		return true
-	})).Return(nil)
+	}), "192.0.2.1").Return(nil)
 
 	req := CreateCommentRequest{
 		Slug:       "test-post",
@@ -71,5 +71,47 @@ func TestCreateComment_AutoApproveDisabled(t *testing.T) {
 	assert.NotEmpty(t, commentID)
 	assert.Equal(t, "pending", created.Status)
 	assert.Equal(t, "STATUS#pending", created.GSI1PK)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestCreateComment_AutoApproveRequiresExplicitTrue(t *testing.T) {
+	t.Setenv("AUTO_APPROVE", "")
+
+	mockRepo := new(MockRepository)
+	svc := NewService(mockRepo, nil)
+
+	mockRepo.On("CreateComment", mock.Anything, mock.MatchedBy(func(item CommentItem) bool {
+		return item.Status == "pending" && item.GSI1PK == "STATUS#pending"
+	}), "192.0.2.1").Return(nil)
+
+	_, err := svc.CreateComment(context.Background(), CreateCommentRequest{
+		Slug:        "test-post",
+		Content:     "Hello world",
+		AuthorName:  "John Doe",
+		AuthorEmail: "john@example.com",
+	}, "192.0.2.1")
+
+	assert.NoError(t, err)
+	mockRepo.AssertExpectations(t)
+}
+
+func TestCreateComment_AutoApproveEnabled(t *testing.T) {
+	t.Setenv("AUTO_APPROVE", "true")
+
+	mockRepo := new(MockRepository)
+	svc := NewService(mockRepo, nil)
+
+	mockRepo.On("CreateComment", mock.Anything, mock.MatchedBy(func(item CommentItem) bool {
+		return item.Status == "approved" && item.GSI1PK == "STATUS#approved"
+	}), "192.0.2.1").Return(nil)
+
+	_, err := svc.CreateComment(context.Background(), CreateCommentRequest{
+		Slug:        "test-post",
+		Content:     "Hello world",
+		AuthorName:  "John Doe",
+		AuthorEmail: "john@example.com",
+	}, "192.0.2.1")
+
+	assert.NoError(t, err)
 	mockRepo.AssertExpectations(t)
 }

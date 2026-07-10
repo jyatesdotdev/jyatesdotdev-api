@@ -8,14 +8,16 @@ This level holds LocalStack tooling, CI, and (stale) spec docs.
 
 `requirements.md`, `design.md`, `tasks.md` are **stale migration-planning docs**. The
 code has diverged from them: reCAPTCHA was replaced with honeypot fields, comments are
-**auto-approved by default** (`AUTO_APPROVE=false` holds them pending), and likes are
+pending unless `AUTO_APPROVE=true`, and likes are
 keyed by `X-Visitor-Id` header (with a per-IP daily rate limit on adds).
 **Trust the code, not these docs.**
 
 ## Local dev (LocalStack, run from this directory)
 
-- `docker-compose.yml` — LocalStack 3.0.2 on :4566 (lambda, apigateway, dynamodb, ses,
-  ssm) + a `backend` container on :8080 that runs **only the interactions binary**.
+- `docker-compose.yml` — LocalStack 3.0.2 on loopback :4566 (lambda, apigateway,
+  dynamodb, ses, ssm, iam) + a `backend` container on loopback :8080 that runs
+  **only the interactions binary**. It deliberately has no global container names;
+  orchestration scripts use isolated Compose project names.
   `localstack-init/01_init.sh` auto-creates the table (with TTL on `expiresAt`) and SES
   identities when LocalStack is healthy.
 - `./deploy-localstack.sh` — builds and deploys interactions/contact/admin to LocalStack

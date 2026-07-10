@@ -8,7 +8,109 @@ on:
   workflow_dispatch:
 
 jobs:
+  resolve-e2e-revisions:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      frontend_sha: ${{ steps.refs.outputs.frontend_sha }}
+      integration_sha: ${{ steps.refs.outputs.integration_sha }}
+    steps:
+      - name: Resolve E2E revisions
+        id: refs
+        env:
+          GH_TOKEN: ${{ secrets.INFRA_REPO_PAT }}
+        run: |
+          frontend_sha="$(gh api "repos/${{ github.repository_owner }}/jyatesdotdev-frontend/commits/main" --jq '.sha')"
+          integration_sha="$(gh api "repos/${{ github.repository_owner }}/jyatesdotdev-integration/commits/main" --jq '.sha')"
+          echo "frontend_sha=$frontend_sha" >> "$GITHUB_OUTPUT"
+          echo "integration_sha=$integration_sha" >> "$GITHUB_OUTPUT"
+
+  e2e:
+    needs: resolve-e2e-revisions
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout integration
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository_owner }}/jyatesdotdev-integration
+          ref: ${{ needs.resolve-e2e-revisions.outputs.integration_sha }}
+          path: jyatesdotdev-integration
+          token: ${{ secrets.INFRA_REPO_PAT }}
+          persist-credentials: false
+
+      - name: Checkout API
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: jyatesdotdev-api
+
+      - name: Checkout frontend
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository_owner }}/jyatesdotdev-frontend
+          ref: ${{ needs.resolve-e2e-revisions.outputs.frontend_sha }}
+          path: jyatesdotdev-frontend
+
+      - name: Report tested revisions
+        run: |
+          git -C jyatesdotdev-integration rev-parse HEAD
+          git -C jyatesdotdev-api rev-parse HEAD
+          git -C jyatesdotdev-frontend rev-parse HEAD
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: jyatesdotdev-api/backend/go.mod
+          cache-dependency-path: jyatesdotdev-api/backend/go.sum
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: |
+            jyatesdotdev-integration/package-lock.json
+            jyatesdotdev-frontend/spa/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: jyatesdotdev-frontend/spa
+        run: npm ci
+
+      - name: Install integration dependencies
+        working-directory: jyatesdotdev-integration
+        run: npm ci
+
+      - name: Install Chromium
+        working-directory: jyatesdotdev-integration
+        run: npx playwright install --with-deps chromium
+
+      - name: Typecheck integration suite
+        working-directory: jyatesdotdev-integration
+        run: npm run typecheck
+
+      - name: Run E2E tests
+        working-directory: jyatesdotdev-integration
+        run: npm run e2e
+        env:
+          CI: true
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: jyatesdotdev-integration/playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
   build-and-deploy:
+    needs: e2e
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -75,11 +177,3 @@ jobs:
               "contact_lambda_key": "${{ env.contact_key }}",
               "interactions_lambda_key": "${{ env.interactions_key }}"
             }
-
-      - name: Trigger E2E Tests
-        continue-on-error: true
-        uses: peter-evans/repository-dispatch@v4
-        with:
-          token: ${{ secrets.INFRA_REPO_PAT }}
-          repository: ${{ github.repository_owner }}/jyatesdotdev-integration
-          event-type: run_e2e

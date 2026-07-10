@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/jyates/jyatesdotdev-api/backend/internal/contact"
+	"github.com/jyates/jyatesdotdev-api/backend/internal/db"
 	"github.com/jyates/jyatesdotdev-api/backend/internal/email"
 )
 
@@ -27,7 +28,12 @@ func init() {
 		log.Fatalf("Could not initialize SES client: %v", err)
 	}
 
-	contactHandler := contact.NewHandler(emailClient)
+	dbClient, err := db.NewClient(ctx)
+	if err != nil {
+		log.Fatalf("Could not initialize DynamoDB client: %v", err)
+	}
+
+	contactHandler := contact.NewHandler(emailClient, contact.NewRateLimiter(dbClient))
 
 	chiLambda = chiadapter.New(newRouter(contactHandler))
 }
@@ -62,7 +68,8 @@ func main() {
 
 		ctx := context.Background()
 		emailClient, _ := email.NewSESClient(ctx)
-		contactHandler := contact.NewHandler(emailClient)
+		dbClient, _ := db.NewClient(ctx)
+		contactHandler := contact.NewHandler(emailClient, contact.NewRateLimiter(dbClient))
 
 		r := newRouter(contactHandler)
 

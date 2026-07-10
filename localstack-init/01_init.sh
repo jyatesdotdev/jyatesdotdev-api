@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -Eeuo pipefail
 
 # Initialize DynamoDB
 awslocal dynamodb create-table \

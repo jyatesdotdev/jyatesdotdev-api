@@ -90,14 +90,14 @@ func TestCreateComment_HoneypotTriggered(t *testing.T) {
 
 	mockSvc.On("CreateComment", mock.Anything, mock.Anything, "192.0.2.1").Return("", ErrHoneypot)
 
-	reqBody := `{"slug": "test", "content": "hello", "authorName": "John", "website": "http://spam.com"}`
+	reqBody := `{"slug": "test", "content": "hello", "authorName": "John", "authorEmail": "john@example.com", "website": "http://spam.com"}`
 	req := httptest.NewRequest("POST", "/api/v1/comments", strings.NewReader(reqBody))
 	req.RemoteAddr = "192.0.2.1"
 	w := httptest.NewRecorder()
 
 	handler.CreateComment(w, req)
 
-	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Equal(t, http.StatusCreated, w.Code)
 }
 
 func TestToggleCommentLike_MissingID(t *testing.T) {
@@ -200,7 +200,7 @@ func TestCreateComment_Success(t *testing.T) {
 
 	mockSvc.On("CreateComment", mock.Anything, mock.Anything, "127.0.0.1").Return("12345", nil)
 
-	reqBody := `{"slug": "test-post", "content": "<b>Bold</b> comment <script>alert(1)</script>", "authorName": "John"}`
+	reqBody := `{"slug": "test-post", "content": "<b>Bold</b> comment <script>alert(1)</script>", "authorName": "John", "authorEmail": "john@example.com"}`
 	req := httptest.NewRequest("POST", "/api/v1/comments", strings.NewReader(reqBody))
 	req.Header.Set("X-Forwarded-For", "127.0.0.1")
 	w := httptest.NewRecorder()
@@ -208,6 +208,35 @@ func TestCreateComment_Success(t *testing.T) {
 	handler.CreateComment(w, req)
 
 	assert.Equal(t, http.StatusCreated, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestCreateComment_InvalidEmail(t *testing.T) {
+	handler := NewHandler(nil)
+	reqBody := `{"slug":"test-post","content":"hello","authorName":"John","authorEmail":"not-an-email"}`
+	req := httptest.NewRequest("POST", "/api/v1/comments", strings.NewReader(reqBody))
+	w := httptest.NewRecorder()
+
+	handler.CreateComment(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestToggleCommentLike_Conflict(t *testing.T) {
+	mockSvc := new(MockService)
+	handler := NewHandler(mockSvc)
+	mockSvc.On("ToggleCommentLike", mock.Anything, "test-post", "123", "visitor-123", mock.Anything).Return(ErrConflict)
+
+	req := httptest.NewRequest("POST", "/123/like", strings.NewReader(`{"slug":"test-post"}`))
+	req.Header.Set("X-Visitor-Id", "visitor-123")
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "123")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+	w := httptest.NewRecorder()
+
+	handler.ToggleCommentLike(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
 	mockSvc.AssertExpectations(t)
 }
 

@@ -178,6 +178,51 @@ func TestToggleLike_RateLimited(t *testing.T) {
 	mockSvc.AssertExpectations(t)
 }
 
+func TestToggleLike_Conflict(t *testing.T) {
+	mockSvc := new(MockService)
+	handler := NewHandler(mockSvc)
+
+	mockSvc.On("ToggleLike", mock.Anything, "test-post", "visitor-123", mock.Anything).Return(LikesResponse{}, ErrConflict)
+
+	req := httptest.NewRequest("POST", "/api/v1/likes", strings.NewReader(`{"slug":"test-post"}`))
+	req.Header.Set("X-Visitor-Id", "visitor-123")
+	w := httptest.NewRecorder()
+
+	handler.ToggleLike(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestToggleLike_PrefersCloudFrontViewerAddress(t *testing.T) {
+	mockSvc := new(MockService)
+	handler := NewHandler(mockSvc)
+
+	mockSvc.On("ToggleLike", mock.Anything, "test-post", "visitor-123", "198.51.100.10").Return(LikesResponse{}, nil)
+
+	req := httptest.NewRequest("POST", "/api/v1/likes", strings.NewReader(`{"slug":"test-post"}`))
+	req.Header.Set("X-Visitor-Id", "visitor-123")
+	req.Header.Set("CloudFront-Viewer-Address", "198.51.100.10:54321")
+	req.Header.Set("X-Forwarded-For", "203.0.113.5")
+	w := httptest.NewRecorder()
+
+	handler.ToggleLike(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	mockSvc.AssertExpectations(t)
+}
+
+func TestToggleLike_RejectsUnknownFields(t *testing.T) {
+	handler := NewHandler(nil)
+	req := httptest.NewRequest("POST", "/api/v1/likes", strings.NewReader(`{"slug":"test-post","unexpected":true}`))
+	req.Header.Set("X-Visitor-Id", "visitor-123")
+	w := httptest.NewRecorder()
+
+	handler.ToggleLike(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func TestGetLikes_NoSlug(t *testing.T) {
 	handler := NewHandler(nil)
 	req := httptest.NewRequest("GET", "/api/v1/likes", nil)

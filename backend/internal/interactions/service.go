@@ -18,6 +18,7 @@ var (
 	ErrInvalidInput = errors.New("invalid input after sanitization")
 	ErrHoneypot     = errors.New("honeypot field was filled")
 	ErrRateLimited  = errors.New("rate limit exceeded")
+	ErrConflict     = errors.New("interaction state changed")
 )
 
 type Service interface {
@@ -115,9 +116,9 @@ func (s *service) CreateComment(ctx context.Context, req CreateCommentRequest, i
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	commentID := uuid.New().String()
-	status := "approved"
-	if os.Getenv("AUTO_APPROVE") == "false" {
-		status = "pending"
+	status := "pending"
+	if strings.EqualFold(os.Getenv("AUTO_APPROVE"), "true") {
+		status = "approved"
 	}
 
 	item := CommentItem{
@@ -135,7 +136,7 @@ func (s *service) CreateComment(ctx context.Context, req CreateCommentRequest, i
 		LikeCount:   0,
 	}
 
-	if err := s.repo.CreateComment(ctx, item); err != nil {
+	if err := s.repo.CreateComment(ctx, item, ipAddress); err != nil {
 		return "", err
 	}
 

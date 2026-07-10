@@ -95,6 +95,7 @@ func setupTestDB(t *testing.T) *db.Client {
 }
 
 func TestIntegration_CommentsFlow(t *testing.T) {
+	t.Setenv("AUTO_APPROVE", "true")
 	// 1. Setup DB and Handlers
 	dbClient := setupTestDB(t)
 
@@ -115,7 +116,7 @@ func TestIntegration_CommentsFlow(t *testing.T) {
 	visitorID := "integration-test-visitor"
 
 	// 2. Submit a comment (auto-approved; IP is recorded for moderation context only)
-	reqBody := `{"slug": "` + slug + `", "content": "This is a great post!", "authorName": "Test User"}`
+	reqBody := `{"slug": "` + slug + `", "content": "This is a great post!", "authorName": "Test User", "authorEmail": "test@example.com"}`
 	req := httptest.NewRequest("POST", "/api/v1/comments", strings.NewReader(reqBody))
 	req.Header.Set("X-Forwarded-For", "127.0.0.1")
 	w := httptest.NewRecorder()
@@ -216,7 +217,7 @@ func TestIntegration_ContactFlow(t *testing.T) {
 
 	// Create dummy email service (nil API internally handles prints and ignores)
 	emailSvc, _ := email.NewSESClient(context.Background())
-	contactHandler := contact.NewHandler(emailSvc)
+	contactHandler := contact.NewHandler(emailSvc, nil)
 
 	r.Mount("/api/v1/contact", contactHandler.Routes())
 

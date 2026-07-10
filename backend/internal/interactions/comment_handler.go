@@ -3,10 +3,13 @@ package interactions
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/jyates/jyatesdotdev-api/backend/internal/requestmeta"
 )
 
 type CommentItem struct {
@@ -42,17 +45,22 @@ type CreateCommentRequest struct {
 }
 
 func (h *Handler) GetComments(w http.ResponseWriter, r *http.Request) {
-	slug := r.URL.Query().Get("slug")
-	if slug == "" {
-		http.Error(w, "slug is required", http.StatusBadRequest)
+	slug := strings.TrimSpace(r.URL.Query().Get("slug"))
+	if !validIdentifier(slug) {
+		http.Error(w, "invalid slug", http.StatusBadRequest)
 		return
 	}
 
-	visitorID := r.Header.Get("X-Visitor-Id")
+	visitorID := strings.TrimSpace(r.Header.Get("X-Visitor-Id"))
+	if visitorID != "" && !validIdentifier(visitorID) {
+		http.Error(w, "invalid X-Visitor-Id header", http.StatusBadRequest)
+		return
+	}
 
 	responses, err := h.Service.GetComments(r.Context(), slug, visitorID)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("get comments failed: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -63,7 +71,11 @@ func (h *Handler) GetComments(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	var req CreateCommentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := requestmeta.DecodeJSON(w, r, &req, commentBodyLimit); err != nil {
+		if errors.Is(err, requestmeta.ErrBodyTooLarge) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -71,24 +83,39 @@ func (h *Handler) CreateComment(w http.ResponseWriter, r *http.Request) {
 	req.Slug = strings.TrimSpace(req.Slug)
 	req.Content = strings.TrimSpace(req.Content)
 	req.AuthorName = strings.TrimSpace(req.AuthorName)
+	req.AuthorEmail = strings.TrimSpace(req.AuthorEmail)
 
-	if req.Slug == "" || req.Content == "" || req.AuthorName == "" {
-		http.Error(w, "slug, content, and authorName are required", http.StatusBadRequest)
+	if !validIdentifier(req.Slug) || req.Content == "" || !validLength(req.Content, maxCommentLength) ||
+		req.AuthorName == "" || !validLength(req.AuthorName, maxNameLength) || !validEmail(req.AuthorEmail) {
+		http.Error(w, "invalid slug, content, authorName, or authorEmail", http.StatusBadRequest)
 		return
 	}
 
-	ipAddress := h.extractIP(r)
+	ipAddress := requestmeta.ClientIP(r)
 
 	commentID, err := h.Service.CreateComment(r.Context(), req, ipAddress)
 	if err != nil {
-		if errors.Is(err, ErrInvalidInput) {
+		switch {
+		case errors.Is(err, ErrHoneypot):
+			writeCommentCreated(w, "")
+			return
+		case errors.Is(err, ErrInvalidInput):
 			http.Error(w, "content or authorName is invalid after sanitization", http.StatusBadRequest)
 			return
+		case errors.Is(err, ErrRateLimited):
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("create comment failed: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
+	writeCommentCreated(w, commentID)
+}
+
+func writeCommentCreated(w http.ResponseWriter, commentID string) {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	// #nosec G104 -- We are writing directly to the HTTP response writer; handling write errors here is generally unnecessary.
 	json.NewEncoder(w).Encode(map[string]string{
@@ -102,40 +129,50 @@ type ToggleCommentLikeRequest struct {
 }
 
 func (h *Handler) ToggleCommentLike(w http.ResponseWriter, r *http.Request) {
-	commentID := chi.URLParam(r, "id")
-	if commentID == "" {
-		http.Error(w, "comment ID is required", http.StatusBadRequest)
+	commentID := strings.TrimSpace(chi.URLParam(r, "id"))
+	if !validIdentifier(commentID) {
+		http.Error(w, "invalid comment ID", http.StatusBadRequest)
 		return
 	}
 
 	var req ToggleCommentLikeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := requestmeta.DecodeJSON(w, r, &req, toggleBodyLimit); err != nil {
+		if errors.Is(err, requestmeta.ErrBodyTooLarge) {
+			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	req.Slug = strings.TrimSpace(req.Slug)
-	if req.Slug == "" {
-		http.Error(w, "slug is required", http.StatusBadRequest)
+	if !validIdentifier(req.Slug) {
+		http.Error(w, "invalid slug", http.StatusBadRequest)
 		return
 	}
 
-	visitorID := r.Header.Get("X-Visitor-Id")
-	if visitorID == "" {
-		http.Error(w, "X-Visitor-Id header is required", http.StatusBadRequest)
+	visitorID := strings.TrimSpace(r.Header.Get("X-Visitor-Id"))
+	if !validIdentifier(visitorID) {
+		http.Error(w, "valid X-Visitor-Id header is required", http.StatusBadRequest)
 		return
 	}
 
-	err := h.Service.ToggleCommentLike(r.Context(), req.Slug, commentID, visitorID, h.extractIP(r))
+	err := h.Service.ToggleCommentLike(r.Context(), req.Slug, commentID, visitorID, requestmeta.ClientIP(r))
 	if err != nil {
-		if errors.Is(err, ErrRateLimited) {
+		switch {
+		case errors.Is(err, ErrRateLimited):
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 			return
+		case errors.Is(err, ErrConflict):
+			http.Error(w, "comment like state changed; retry the request", http.StatusConflict)
+			return
 		}
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		log.Printf("toggle comment like failed: %v", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	// #nosec G104 -- We are writing directly to the HTTP response writer; handling write errors here is generally unnecessary.
 	json.NewEncoder(w).Encode(map[string]string{

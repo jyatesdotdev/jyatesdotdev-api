@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
@@ -87,11 +88,12 @@ func (r *dynamoRepository) UpdateCommentStatus(ctx context.Context, slug, commen
 			"SK": &types.AttributeValueMemberS{Value: "COMMENT#" + commentID},
 		},
 		UpdateExpression:          expr.Update(),
+		ConditionExpression:       aws.String("attribute_exists(PK)"),
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
 	})
 
-	return err
+	return mapNotFoundError(err)
 }
 
 func (r *dynamoRepository) DeleteComment(ctx context.Context, slug, commentID string) error {
@@ -101,6 +103,15 @@ func (r *dynamoRepository) DeleteComment(ctx context.Context, slug, commentID st
 			"PK": &types.AttributeValueMemberS{Value: "POST#" + slug},
 			"SK": &types.AttributeValueMemberS{Value: "COMMENT#" + commentID},
 		},
+		ConditionExpression: aws.String("attribute_exists(PK)"),
 	})
+	return mapNotFoundError(err)
+}
+
+func mapNotFoundError(err error) error {
+	var conditionalErr *types.ConditionalCheckFailedException
+	if errors.As(err, &conditionalErr) {
+		return ErrCommentNotFound
+	}
 	return err
 }

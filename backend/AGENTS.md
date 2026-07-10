@@ -33,8 +33,8 @@ types and `httptest` — one `TestXxx` func per case, not table-driven. Follow t
 override — also forces region us-east-1), `SES_FROM_EMAIL`, `SES_ADMIN_EMAIL`,
 `SES_ENDPOINT` (local → SES v1 client; unset → SES v2), `ADMIN_USERNAME`,
 `ADMIN_PASSWORD` (read by the authorizer — NOT from SSM, despite prod SSM params
-existing), `AUTO_APPROVE` (exactly `"false"` → new comments are `pending`; unset or
-anything else → auto-approved), `PORT`.
+existing), `AUTO_APPROVE` (exactly `"true"` auto-approves new comments; unset or any
+other value leaves them pending), `PORT`.
 
 ## DynamoDB single-table design (`jyatesdotdev-state`, PK/SK + GSI1)
 
