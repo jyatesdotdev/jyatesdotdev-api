@@ -56,11 +56,16 @@ func NewSESClient(ctx context.Context) (*SESClient, error) {
 	return client, nil
 }
 
-func (s *SESClient) sendEmail(ctx context.Context, subject, body string, replyTo []string) error {
+func (s *SESClient) sendEmail(
+	ctx context.Context,
+	to, subject, body string,
+	replyTo []string,
+	listManagement *types.ListManagementOptions,
+) error {
 	if s.v1api != nil {
 		input := &ses.SendEmailInput{
 			Source:      aws.String(s.fromEmail),
-			Destination: &sestypes.Destination{ToAddresses: []string{s.toEmail}},
+			Destination: &sestypes.Destination{ToAddresses: []string{to}},
 			Message: &sestypes.Message{
 				Subject: &sestypes.Content{Data: aws.String(subject), Charset: aws.String("UTF-8")},
 				Body:    &sestypes.Body{Text: &sestypes.Content{Data: aws.String(body), Charset: aws.String("UTF-8")}},
@@ -73,9 +78,10 @@ func (s *SESClient) sendEmail(ctx context.Context, subject, body string, replyTo
 
 	if s.api != nil {
 		input := &sesv2.SendEmailInput{
-			FromEmailAddress: aws.String(s.fromEmail),
-			Destination:      &types.Destination{ToAddresses: []string{s.toEmail}},
-			ReplyToAddresses: replyTo,
+			FromEmailAddress:      aws.String(s.fromEmail),
+			Destination:           &types.Destination{ToAddresses: []string{to}},
+			ReplyToAddresses:      replyTo,
+			ListManagementOptions: listManagement,
 			Content: &types.EmailContent{
 				Simple: &types.Message{
 					Subject: &types.Content{Data: aws.String(subject), Charset: aws.String("UTF-8")},
@@ -92,11 +98,34 @@ func (s *SESClient) sendEmail(ctx context.Context, subject, body string, replyTo
 }
 
 func (s *SESClient) SendAdminNotification(ctx context.Context, subject, body string) error {
-	return s.sendEmail(ctx, subject, body, nil)
+	return s.sendEmail(ctx, s.toEmail, subject, body, nil, nil)
 }
 
 func (s *SESClient) SendContactEmail(ctx context.Context, name, replyTo, message string) error {
 	subject := fmt.Sprintf("New Contact Form Submission from %s", name)
 	body := fmt.Sprintf("Name: %s\nEmail: %s\n\nMessage:\n%s", name, replyTo, message)
-	return s.sendEmail(ctx, subject, body, []string{replyTo})
+	return s.sendEmail(ctx, s.toEmail, subject, body, []string{replyTo}, nil)
+}
+
+func (s *SESClient) SendSubscriptionConfirmation(
+	ctx context.Context,
+	to, confirmationURL string,
+) error {
+	subject := "Confirm your jyates.dev updates"
+	body := fmt.Sprintf(
+		"Confirm your subscription to jyates.dev updates:\n\n%s\n\nThis link expires in 48 hours. If you did not request this, you can ignore this email.",
+		confirmationURL,
+	)
+	return s.sendEmail(ctx, to, subject, body, nil, nil)
+}
+
+func (s *SESClient) SendUpdateNotification(
+	ctx context.Context,
+	to, topic, subject, body, contactListName string,
+) error {
+	body += "\n\nManage preferences or unsubscribe: {{amazonSESUnsubscribeUrl}}"
+	return s.sendEmail(ctx, to, subject, body, nil, &types.ListManagementOptions{
+		ContactListName: aws.String(contactListName),
+		TopicName:       aws.String(topic),
+	})
 }

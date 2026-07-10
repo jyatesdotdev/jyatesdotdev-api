@@ -130,11 +130,12 @@ jobs:
       - name: Build Lambdas
         working-directory: backend
         run: |
-          mkdir -p bin/admin bin/authorizer bin/contact bin/interactions
+          mkdir -p bin/admin bin/authorizer bin/contact bin/interactions bin/notifications
           GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/admin/bootstrap cmd/admin/main.go
           GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/authorizer/bootstrap cmd/authorizer/main.go
           GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/contact/bootstrap cmd/contact/main.go
           GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/interactions/bootstrap cmd/interactions/main.go
+          GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o bin/notifications/bootstrap cmd/notifications/main.go
 
       - name: Package Lambdas
         working-directory: backend
@@ -143,6 +144,7 @@ jobs:
           zip -j authorizer.zip bin/authorizer/bootstrap
           zip -j contact.zip bin/contact/bootstrap
           zip -j interactions.zip bin/interactions/bootstrap
+          zip -j notifications.zip bin/notifications/bootstrap
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -157,11 +159,13 @@ jobs:
           aws s3 cp backend/authorizer.zip s3://${{ vars.ARTIFACTS_BUCKET }}/${S3_KEY_PREFIX}/authorizer.zip
           aws s3 cp backend/contact.zip s3://${{ vars.ARTIFACTS_BUCKET }}/${S3_KEY_PREFIX}/contact.zip
           aws s3 cp backend/interactions.zip s3://${{ vars.ARTIFACTS_BUCKET }}/${S3_KEY_PREFIX}/interactions.zip
+          aws s3 cp backend/notifications.zip s3://${{ vars.ARTIFACTS_BUCKET }}/${S3_KEY_PREFIX}/notifications.zip
           
           echo "admin_key=${S3_KEY_PREFIX}/admin.zip" >> $GITHUB_ENV
           echo "authorizer_key=${S3_KEY_PREFIX}/authorizer.zip" >> $GITHUB_ENV
           echo "contact_key=${S3_KEY_PREFIX}/contact.zip" >> $GITHUB_ENV
           echo "interactions_key=${S3_KEY_PREFIX}/interactions.zip" >> $GITHUB_ENV
+          echo "notifications_key=${S3_KEY_PREFIX}/notifications.zip" >> $GITHUB_ENV
 
       - name: Trigger Infra Deployment
         uses: peter-evans/repository-dispatch@v4
@@ -175,5 +179,6 @@ jobs:
               "admin_lambda_key": "${{ env.admin_key }}",
               "authorizer_lambda_key": "${{ env.authorizer_key }}",
               "contact_lambda_key": "${{ env.contact_key }}",
-              "interactions_lambda_key": "${{ env.interactions_key }}"
+              "interactions_lambda_key": "${{ env.interactions_key }}",
+              "notifications_lambda_key": "${{ env.notifications_key }}"
             }

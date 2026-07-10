@@ -1,6 +1,7 @@
 # jyatesdotdev-api
 
-Go backend for [jyates.dev](https://jyates.dev) — four Lambda functions behind API Gateway.
+Go backend for [jyates.dev](https://jyates.dev) — four HTTP Lambda functions behind API
+Gateway plus an S3-triggered content notification function.
 
 ## Architecture
 
@@ -19,6 +20,7 @@ Go backend for [jyates.dev](https://jyates.dev) — four Lambda functions behind
 | `contact` | Contact form → SES email |
 | `admin` | Comment moderation (approve/reject/delete) |
 | `authorizer` | Basic Auth for admin endpoints |
+| `notifications` | New-content manifest → confirmed SES topic subscribers |
 
 ### API Routes (via CloudFront `/api/*`)
 
@@ -29,6 +31,11 @@ GET  /api/v1/comments?slug=...
 POST /api/v1/comments                 {slug, content, authorName, authorEmail, website}
 POST /api/v1/comments/:id/like        {slug}
 POST /api/v1/contact                  {name, email, message, website}
+POST /api/v1/subscriptions            {email, topics, website}
+POST /api/v1/subscriptions/confirm    {token}
+GET  /api/v1/geo
+GET  /api/v1/visits
+POST /api/v1/visits
 GET  /api/v1/admin/comments?status=...
 PUT  /api/v1/admin/comments/:id       {slug, status}
 DELETE /api/v1/admin/comments/:id     {slug}
@@ -38,7 +45,10 @@ DELETE /api/v1/admin/comments/:id     {slug}
 
 - **Honeypot**: `website` is a hidden form field that must be empty; submissions that fill it are rejected (contact returns a fake 200 so bots aren't tipped off). There is no reCAPTCHA.
 - **Likes** are deduplicated by the `X-Visitor-Id` request header (required — requests without it get a 400), not by IP.
-- **Comments** require a valid email address and are pending unless `AUTO_APPROVE=true`; the admin dashboard can approve or reject them. The CloudFront-generated viewer address is stored for moderation context, and comment creation is limited per IP/day.
+- **Comments** require a valid email address and are approved unless `AUTO_APPROVE=false`; the admin dashboard can approve or reject them. The CloudFront-generated viewer address is stored for moderation context, and comment creation is limited per IP/day.
+- **Subscriptions** use a 48-hour, single-use email confirmation token. Confirmed
+  addresses and `blog`/`projects` preferences live in an SES contact list, which also
+  supplies one-click unsubscribe links. Pending token hashes live in DynamoDB.
 
 ### DynamoDB Schema
 
@@ -51,6 +61,9 @@ Single table `jyatesdotdev-state` with single-table design:
 | `POST#<slug>` | `COMMENT#<uuid>` | Comment (content, author, status, likeCount) |
 | `COMMENT#<uuid>` | `LIKE#<visitorID>` | Comment like tracking |
 | `POST#<slug>#USER#<visitorID>` | `LIKE#COMMENT#<uuid>` | User-comment like cross-reference |
+| `SUBSCRIPTION_REQUEST#<tokenHash>` | `METADATA` | Pending double-opt-in request (TTL; atomically consumed) |
+| `NOTIFICATION#<commitSHA>` | `MANIFEST` | Completed-manifest marker (TTL) |
+| `NOTIFICATION#<commitSHA>` | `RECIPIENT#<event>#<emailHash>` | Resumable per-recipient delivery checkpoint (TTL) |
 
 GSI1 (`GSI1PK`/`GSI1SK`) indexes comments by status for admin queries (e.g., `STATUS#approved`, `STATUS#pending`).
 
@@ -65,7 +78,7 @@ go test -short ./...
 
 Pushes to `main` (under `backend/**`) or manual `workflow_dispatch` trigger the pipeline:
 
-1. Build four Lambda binaries (cross-compiled for `linux/arm64`)
+1. Build five Lambda binaries (cross-compiled for `linux/arm64`)
 2. Zip and upload to the artifacts S3 bucket under `lambdas/<git-sha>/`
 3. Dispatch `deploy_api` to `jyatesdotdev-infra` with the artifact locations, and `run_e2e` to `jyatesdotdev-integration`
 

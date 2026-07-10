@@ -9,6 +9,8 @@
 | `auth` | Basic-Auth TOKEN authorizer. Reads `ADMIN_USERNAME`/`ADMIN_PASSWORD` **env vars** — denies if unset. |
 | `email` | `Service` interface. SES **v1** when `SES_ENDPOINT` set (LocalStack — v2 is pro-only), SES **v2** in prod. No-op client when `SES_FROM_EMAIL`/`SES_ADMIN_EMAIL` unset. |
 | `contact` | Contact-form handler: honeypot + validation → email. |
+| `subscriptions` | Double opt-in: validation/honeypot/rate limit, atomically consumed hashed 48-hour DynamoDB tokens, additive SESv2 preferences (`blog`/`projects`). LocalStack uses DynamoDB topic contacts because SESv2 lists are Pro-only. |
+| `notifications` | S3 manifest validation, resumable recipient checkpoints, paginated SES contact lookup, and per-recipient update delivery. Only `https://jyates.dev` content URLs are accepted. |
 
 (A `recaptcha` package existed before the honeypot migration; it has been fully
 deleted — don't reintroduce it without being asked.)
@@ -27,6 +29,11 @@ deleted — don't reintroduce it without being asked.)
   (5s timeout from the request context; a failed send is logged, never fails the create).
 - **Spam protection is a honeypot**: a hidden `Website` field. Contact returns a fake
   200 when it's filled (don't tip off bots); interactions returns `ErrHoneypot`.
+- Subscription requests return the same 202 for honeypots, are capped at 5/IP/day,
+  and never reveal whether an address is already subscribed. Confirmation tokens are
+  random, SHA-256 hashed at rest, atomically single-use, and expire after 48 hours.
+  Confirming additional topics preserves existing opt-ins; removals use SES's managed
+  preference/unsubscribe link.
 - Comment content is sanitized with bluemonday `StrictPolicy`.
 - Admin credentials: the authorizer reads **env vars only** (Terraform injects them in
   prod). Prod SSM params `/jyatesdotdev/admin/*` exist purely as the operator's record of

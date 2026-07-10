@@ -68,6 +68,12 @@ setup_lambda_proxy "$COMMENT_LIKE_RES_ID" "interactions-api" "POST"
 CONTACT_RES_ID=$(create_resource "$V1_RES_ID" "contact")
 setup_lambda_proxy "$CONTACT_RES_ID" "contact-api" "POST"
 
+# 6b. Create /subscriptions and /subscriptions/confirm
+SUBSCRIPTIONS_RES_ID=$(create_resource "$V1_RES_ID" "subscriptions")
+setup_lambda_proxy "$SUBSCRIPTIONS_RES_ID" "contact-api" "POST"
+SUBSCRIPTION_CONFIRM_RES_ID=$(create_resource "$SUBSCRIPTIONS_RES_ID" "confirm")
+setup_lambda_proxy "$SUBSCRIPTION_CONFIRM_RES_ID" "contact-api" "POST"
+
 # 7. Create /admin/comments
 ADMIN_RES_ID=$(create_resource "$V1_RES_ID" "admin")
 ADMIN_COMMENTS_RES_ID=$(create_resource "$ADMIN_RES_ID" "comments")

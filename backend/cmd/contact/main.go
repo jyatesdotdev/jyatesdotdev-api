@@ -16,6 +16,7 @@ import (
 	"github.com/jyates/jyatesdotdev-api/backend/internal/contact"
 	"github.com/jyates/jyatesdotdev-api/backend/internal/db"
 	"github.com/jyates/jyatesdotdev-api/backend/internal/email"
+	"github.com/jyates/jyatesdotdev-api/backend/internal/subscriptions"
 )
 
 var chiLambda *chiadapter.ChiLambda
@@ -34,17 +35,47 @@ func init() {
 	}
 
 	contactHandler := contact.NewHandler(emailClient, contact.NewRateLimiter(dbClient))
+	subscriptionHandler := newSubscriptionHandler(ctx, dbClient, emailClient)
 
-	chiLambda = chiadapter.New(newRouter(contactHandler))
+	chiLambda = chiadapter.New(newRouter(contactHandler, subscriptionHandler))
 }
 
-func newRouter(contactHandler *contact.Handler) *chi.Mux {
+func newSubscriptionHandler(
+	ctx context.Context,
+	dbClient *db.Client,
+	emailClient *email.SESClient,
+) *subscriptions.Handler {
+	contacts, err := subscriptions.NewContactStore(ctx, dbClient)
+	if err != nil {
+		log.Fatalf("Could not initialize subscriber contacts: %v", err)
+	}
+	siteURL := os.Getenv("SITE_URL")
+	if siteURL == "" {
+		siteURL = "https://jyates.dev"
+	}
+	service, err := subscriptions.NewService(
+		subscriptions.NewRequestRepository(dbClient),
+		contacts,
+		emailClient,
+		siteURL,
+	)
+	if err != nil {
+		log.Fatalf("Could not initialize subscription service: %v", err)
+	}
+	return subscriptions.NewHandler(service, subscriptions.NewRateLimiter(dbClient))
+}
+
+func newRouter(
+	contactHandler *contact.Handler,
+	subscriptionHandler *subscriptions.Handler,
+) *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Mount("/contact", contactHandler.Routes())
+		r.Mount("/subscriptions", subscriptionHandler.Routes())
 	})
 
 	return r
@@ -70,8 +101,9 @@ func main() {
 		emailClient, _ := email.NewSESClient(ctx)
 		dbClient, _ := db.NewClient(ctx)
 		contactHandler := contact.NewHandler(emailClient, contact.NewRateLimiter(dbClient))
+		subscriptionHandler := newSubscriptionHandler(ctx, dbClient, emailClient)
 
-		r := newRouter(contactHandler)
+		r := newRouter(contactHandler, subscriptionHandler)
 
 		srv := &http.Server{
 			Addr:              ":" + port,

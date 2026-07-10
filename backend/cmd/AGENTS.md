@@ -3,9 +3,10 @@
 | Function | Routes | Notes |
 |---|---|---|
 | `interactions` | `/api/v1/likes`, `/api/v1/comments`, `/api/v1/comments/{id}/like`, `/api/v1/geo`, `/api/v1/visits` | Likes + comments + visits/geo; DynamoDB + SES (admin notification on new comment, sent synchronously, best-effort). `/geo` reflects CloudFront-Viewer-* headers; `/visits` (GET/POST) tracks per-country visit counts |
-| `contact` | `/api/v1/contact` (POST) | Contact form → SES; honeypot-protected; no DB |
+| `contact` | `/api/v1/contact`, `/api/v1/subscriptions`, `/api/v1/subscriptions/confirm` (POST) | Contact email + double-opt-in subscriptions; DynamoDB rate limits/tokens, SES email/contact list |
 | `admin` | `/api/v1/admin/comments...` (GET/PUT/DELETE) | Comment moderation; protected in prod by the authorizer |
 | `authorizer` | n/a — `lambda.Start(auth.HandleRequest)` | API Gateway TOKEN authorizer doing Basic Auth; **not a chi app** |
+| `notifications` | n/a — S3 event handler | Validates `notification-events/*.json`, deduplicates by commit SHA, lists SES topic opt-ins, sends update mail |
 
 Gotchas:
 

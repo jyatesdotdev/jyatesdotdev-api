@@ -1,7 +1,7 @@
 # backend/ — Go module
 
 Module `github.com/jyates/jyatesdotdev-api/backend`, Go 1.26.2. Key deps: chi v5 routing
-via `aws-lambda-go-api-proxy` (chi adapter), aws-sdk-go-v2 (dynamodb + expression),
+via `aws-lambda-go-api-proxy` (chi adapter), aws-sdk-go-v2 (DynamoDB + S3 + SESv2),
 testify, bluemonday (sanitization), google/uuid.
 
 ## Architecture
@@ -31,7 +31,9 @@ types and `httptest` — one `TestXxx` func per case, not table-driven. Follow t
 
 `DYNAMODB_TABLE_NAME` (default `jyatesdotdev-state`), `DYNAMODB_ENDPOINT` (local
 override — also forces region us-east-1), `SES_FROM_EMAIL`, `SES_ADMIN_EMAIL`,
-`SES_ENDPOINT` (local → SES v1 client; unset → SES v2), `ADMIN_USERNAME`,
+`SES_ENDPOINT` (local → SES v1 client; unset → SES v2), `SES_CONTACT_LIST_NAME`
+(default `jyatesdotdev-updates`), `SITE_URL` (confirmation-link origin), `S3_ENDPOINT`
+(notification publisher local override), `ADMIN_USERNAME`,
 `ADMIN_PASSWORD` (read by the authorizer — NOT from SSM, despite prod SSM params
 existing), `AUTO_APPROVE` (exactly `"true"` auto-approves new comments; unset or any
 other value leaves them pending), `PORT`.
@@ -48,8 +50,11 @@ other value leaves them pending), `PORT`.
 | `RATELIMIT#IP#<ip>` | `LIKES#<yyyy-mm-dd UTC>` | per-IP daily like-add counter (cap 100 → 429; TTL via `expiresAt`, +48h) |
 | `RATELIMIT#IP#<ip>` | `VISITS#<yyyy-mm-dd UTC>` | per-IP daily visit-record counter (cap 20 → 429; TTL via `expiresAt`, +48h) |
 | `STATS#GEO` | `COUNTRY#<alpha2>` | per-country visit counter (atomic `ADD count`; stores `countryName`) |
+| `SUBSCRIPTION_REQUEST#<sha256(token)>` | `METADATA` | pending email/topics; 48-hour TTL, atomically deleted on confirmation |
+| `NOTIFICATION#<commitSHA>` | `MANIFEST` | completed-manifest marker with 90-day TTL |
+| `NOTIFICATION#<commitSHA>` | `RECIPIENT#<event>#<emailHash>` | resumable recipient claim/completion checkpoint with a 90-second lease and 90-day TTL |
 
 Approved comments are read via GSI1 (`STATUS#approved` + `begins_with(POST#<slug>#)`).
 
-See `cmd/AGENTS.md` for the four entry points and `internal/AGENTS.md` for package
+See `cmd/AGENTS.md` for the five entry points and `internal/AGENTS.md` for package
 responsibilities and behavioral gotchas.

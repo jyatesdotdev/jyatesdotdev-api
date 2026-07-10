@@ -11,6 +11,9 @@ zip -j contact.zip bootstrap
 
 GOOS=linux GOARCH=amd64 go build -tags lambda.norpc -o bootstrap cmd/admin/main.go
 zip -j admin.zip bootstrap
+
+GOOS=linux GOARCH=amd64 go build -tags lambda.norpc -o bootstrap cmd/notifications/main.go
+zip -j notifications.zip bootstrap
 cd ..
 
 echo "Deploying to LocalStack..."
@@ -45,7 +48,8 @@ deploy_lambda() {
 }
 
 deploy_lambda "interactions-api" "backend/interactions.zip" "{DYNAMODB_ENDPOINT=http://localstack:4566,DYNAMODB_TABLE_NAME=jyatesdotdev-state,AUTO_APPROVE=true}"
-deploy_lambda "contact-api" "backend/contact.zip" "{DYNAMODB_ENDPOINT=http://localstack:4566,DYNAMODB_TABLE_NAME=jyatesdotdev-state,SES_FROM_EMAIL=test@jyates.dev,SES_ADMIN_EMAIL=admin@jyates.dev,SES_ENDPOINT=http://localstack:4566}"
+deploy_lambda "contact-api" "backend/contact.zip" "{DYNAMODB_ENDPOINT=http://localstack:4566,DYNAMODB_TABLE_NAME=jyatesdotdev-state,SES_FROM_EMAIL=test@jyates.dev,SES_ADMIN_EMAIL=admin@jyates.dev,SES_ENDPOINT=http://localstack:4566,SES_CONTACT_LIST_NAME=jyatesdotdev-updates,SITE_URL=http://127.0.0.1:4173}"
 deploy_lambda "admin-api" "backend/admin.zip" "{DYNAMODB_ENDPOINT=http://localstack:4566,DYNAMODB_TABLE_NAME=jyatesdotdev-state}"
+deploy_lambda "notifications-api" "backend/notifications.zip" "{DYNAMODB_ENDPOINT=http://localstack:4566,DYNAMODB_TABLE_NAME=jyatesdotdev-state,SES_FROM_EMAIL=test@jyates.dev,SES_ADMIN_EMAIL=admin@jyates.dev,SES_ENDPOINT=http://localstack:4566,SES_CONTACT_LIST_NAME=jyatesdotdev-updates,S3_ENDPOINT=http://localstack:4566}"
 
 echo "Functions deployed successfully to LocalStack."
