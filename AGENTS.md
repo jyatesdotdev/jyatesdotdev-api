@@ -41,4 +41,4 @@ keyed by `X-Visitor-Id` header (with a per-IP daily rate limit on adds).
   `jyatesdotdev-infra` and `run_e2e` to `jyatesdotdev-integration`.
 - `security.yml` — gosec + `go test -short ./...`.
 - `codeql.yml` — CodeQL Go analysis.
-- CI reads the Go version from `backend/go.mod` (currently 1.26.2) via `go-version-file`, so there is no version pin to drift.
+- CI reads the Go version from `backend/go.mod` (currently 1.26.6) via `go-version-file`, so there is no version pin to drift.

@@ -45,3 +45,17 @@ jobs:
       - name: Run unit tests
         working-directory: backend
         run: go test -short ./...
+
+  govulncheck:
+    name: Govulncheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Run govulncheck
+        uses: golang/govulncheck-action@v1
+        with:
+          go-version-file: backend/go.mod
+          work-dir: backend
+          go-package: ./...

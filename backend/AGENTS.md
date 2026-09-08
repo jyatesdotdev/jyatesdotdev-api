@@ -1,6 +1,6 @@
 # backend/ — Go module
 
-Module `github.com/jyates/jyatesdotdev-api/backend`, Go 1.26.2. Key deps: chi v5 routing
+Module `github.com/jyates/jyatesdotdev-api/backend`, Go 1.26.6. Key deps: chi v5 routing
 via `aws-lambda-go-api-proxy` (chi adapter), aws-sdk-go-v2 (DynamoDB + S3 + SESv2),
 testify, bluemonday (sanitization), google/uuid.
 
