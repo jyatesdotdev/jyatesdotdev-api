@@ -70,7 +70,7 @@ jobs:
           cache-dependency-path: jyatesdotdev-api/backend/go.sum
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
