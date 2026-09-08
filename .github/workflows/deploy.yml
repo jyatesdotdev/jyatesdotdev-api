@@ -64,7 +64,7 @@ jobs:
           git -C jyatesdotdev-frontend rev-parse HEAD
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: jyatesdotdev-api/backend/go.mod
           cache-dependency-path: jyatesdotdev-api/backend/go.sum
@@ -122,7 +122,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
