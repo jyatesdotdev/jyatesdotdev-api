@@ -13,7 +13,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ses v1.40.0
 	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.71.0
 	github.com/awslabs/aws-lambda-go-api-proxy v0.16.2
-	github.com/go-chi/chi/v5 v5.3.2
+	github.com/go-chi/chi/v5 v5.4.0
 	github.com/google/uuid v1.6.0
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/stretchr/testify v1.12.1
